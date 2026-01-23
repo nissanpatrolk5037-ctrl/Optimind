@@ -1,0 +1,2189 @@
+import cv2
+import numpy as np
+from PIL import Image
+from sklearn.cluster import KMeans
+from scipy import ndimage
+import base64
+import io
+import json
+from enum import Enum
+from typing import Dict, List
+import colorsys
+import warnings
+warnings.filterwarnings('ignore')
+import requests
+from pathlib import Path
+import os
+from auto_coder import groq_call
+import pyautogui
+
+# Define OCR function as provided
+def ocr(**kwargs) -> str:
+    """
+    Perform OCR on an image using OCR.Space API.
+    """
+    image_path = kwargs.get("image_path") or kwargs.get("raw_input")
+    api_key = kwargs.get("api_key", "YOUR_OCR_SPACE_API_KEY")
+    
+    if not image_path:
+        return "Error: No image path provided."
+
+    p = Path(image_path)
+    if not p.exists():
+        return "Error: image not found."
+
+    try:
+        with p.open("rb") as img_file:
+            r = requests.post(
+                "https://api.ocr.space/parse/image",
+                files={"image": img_file},
+                data={"apikey": api_key, "language": "eng", "OCREngine": "2"},
+                timeout=60
+            )
+        r.raise_for_status()
+    except Exception as e:
+        return f"Error: OCR request failed: {e}"
+
+    try:
+        result = r.json()
+    except ValueError:
+        return f"Response not JSON: {r.text[:200]}..."
+
+    if result.get("IsErroredOnProcessing"):
+        return "❌ OCR Failed: " + str(result.get("ErrorMessage"))
+
+    parsed = result.get("ParsedResults")
+    if parsed and parsed[0].get("ParsedText"):
+        return parsed[0]["ParsedText"].strip()
+
+    return "⚠️ No text found in image."
+
+class DetailLevel(Enum):
+    """Level of detail for image description"""
+    MINIMAL = 1
+    STANDARD = 2
+    DETAILED = 3
+    EXTREME = 4
+    RESEARCH = 5
+
+class AdvancedImageToTextEncoder:
+    """
+    Advanced image-to-text encoder using traditional computer vision techniques
+    with OCR.Space integration for text extraction.
+    """
+    
+    def __init__(self, 
+                 haar_cascade_dir: str = "haarcascades",
+                 ocr_api_key: str = "K85328613788957"):
+        """
+        Initialize computer vision encoder
+        
+        Args:
+            haar_cascade_dir: Directory containing OpenCV Haar cascades
+            ocr_api_key: API key for OCR.Space
+        """
+        self.ocr_api_key = ocr_api_key
+        self.haar_cascade_dir = haar_cascade_dir
+        self._initialize_cascades()
+        
+        # Initialize color name mapping
+        self.color_names = self._initialize_color_names()
+        
+    def _initialize_cascades(self):
+        """Initialize OpenCV Haar cascades for object detection"""
+        try:
+            self.cascades = {
+                'face': cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'),
+                'eye': cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_eye.xml'),
+                'smile': cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_smile.xml'),
+                'fullbody': cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_fullbody.xml'),
+                'upperbody': cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_upperbody.xml'),
+                'lowerbody': cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_lowerbody.xml'),
+            }
+        except:
+            print("Note: Some Haar cascades not available. Using simplified detection.")
+            self.cascades = {}
+    
+    def _initialize_color_names(self):
+        """Initialize comprehensive color name mapping"""
+        return {
+            (255, 0, 0): "Red",
+            (0, 255, 0): "Green",
+            (0, 0, 255): "Blue",
+            (255, 255, 0): "Yellow",
+            (255, 0, 255): "Magenta",
+            (0, 255, 255): "Cyan",
+            (255, 255, 255): "White",
+            (0, 0, 0): "Black",
+            (128, 128, 128): "Gray",
+            (192, 192, 192): "Silver",
+            (128, 0, 0): "Maroon",
+            (128, 128, 0): "Olive",
+            (0, 128, 0): "Dark Green",
+            (128, 0, 128): "Purple",
+            (0, 128, 128): "Teal",
+            (255, 165, 0): "Orange",
+            (255, 192, 203): "Pink",
+            (165, 42, 42): "Brown",
+            (210, 180, 140): "Tan",
+            (240, 230, 140): "Khaki",
+            (255, 215, 0): "Gold",
+            (218, 165, 32): "Golden Rod",
+            (173, 216, 230): "Light Blue",
+            (135, 206, 235): "Sky Blue",
+            (70, 130, 180): "Steel Blue",
+            (25, 25, 112): "Midnight Blue",
+            (255, 228, 196): "Bisque",
+            (255, 248, 220): "Cornsilk",
+            (250, 235, 215): "Antique White",
+        }
+    
+    def encode_image_to_detailed_text(
+        self,
+        image_path: str,
+        detail_level: DetailLevel = DetailLevel.RESEARCH,
+        include_visual_features: bool = True,
+        structured_output: bool = True
+    ) -> Dict:
+        """
+        Convert image to extremely detailed text description
+        
+        Args:
+            image_path: Path to image file
+            detail_level: Level of detail for description
+            include_visual_features: Include visual feature descriptions
+            structured_output: Return structured JSON vs plain text
+            
+        Returns:
+            Dictionary or string with detailed image description
+        """
+        # Load image
+        image = Image.open(image_path).convert('RGB')
+        cv_image = cv2.imread(image_path)
+        
+        if cv_image is None:
+            raise ValueError(f"Could not load image from {image_path}")
+        
+        # Convert BGR to RGB for analysis
+        cv_image_rgb = cv2.cvtColor(cv_image, cv2.COLOR_BGR2RGB)
+        
+        # Get all analyses
+        analyses = self._perform_comprehensive_analysis(
+            image, cv_image, cv_image_rgb, detail_level, image_path
+        )
+        
+        # Generate comprehensive description
+        description = self._generate_detailed_description(analyses, detail_level)
+        
+        # Structure output
+        if structured_output:
+            output = {
+                "metadata": {
+                    "original_image_path": image_path,
+                    "image_dimensions": image.size,
+                    "aspect_ratio": f"{image.size[0]}:{image.size[1]}",
+                    "mode": image.mode,
+                    "detail_level": detail_level.name,
+                    "timestamp": str(np.datetime64('now')),
+                    "file_size": os.path.getsize(image_path) if os.path.exists(image_path) else None
+                },
+                "analyses": analyses,
+                "comprehensive_description": description,
+                "visual_semantic_encoding": self._create_visual_semantic_encoding(analyses)
+            }
+            
+            if include_visual_features:
+                output["visual_features"] = self._extract_visual_features(cv_image_rgb)
+                
+            # Add base64 encoded thumbnail
+            output["thumbnail_base64"] = self._create_thumbnail_base64(image)
+            
+            return output
+        else:
+            return description
+    
+    def _perform_comprehensive_analysis(
+        self, 
+        image: Image.Image,
+        cv_image: np.ndarray,
+        cv_image_rgb: np.ndarray,
+        detail_level: DetailLevel,
+        image_path: str
+    ) -> Dict:
+        """
+        Perform all image analyses using computer vision
+        """
+        analyses = {}
+        
+        # 1. Basic image properties
+        analyses["image_properties"] = self._analyze_image_properties(image, cv_image)
+        
+        # 2. Comprehensive color analysis
+        analyses["color_analysis"] = self._analyze_colors_comprehensive(cv_image_rgb, detail_level)
+        
+        # 3. Edge, shape, and structure analysis
+        analyses["structural_analysis"] = self._analyze_structure(cv_image, detail_level)
+        
+        # 4. Texture and pattern analysis
+        analyses["texture_analysis"] = self._analyze_texture_comprehensive(cv_image, detail_level)
+        
+        # 5. Object detection using traditional methods
+        analyses["object_detection"] = self._detect_objects_traditional(cv_image, detail_level)
+        
+        # 6. Region and segmentation analysis
+        analyses["region_analysis"] = self._analyze_regions(cv_image_rgb, detail_level)
+        
+        # 7. OCR text extraction using OCR.Space
+        analyses["text_extraction"] = self._extract_text_ocr_space(image_path)
+        
+        # 8. Contour and shape analysis
+        analyses["contour_analysis"] = self._analyze_contours(cv_image)
+        
+        # 9. Image quality and statistics
+        analyses["quality_metrics"] = self._analyze_image_quality(cv_image)
+        
+        # 10. Histogram and distribution analysis
+        analyses["distribution_analysis"] = self._analyze_distributions(cv_image_rgb)
+        
+        # 11. Composition and symmetry analysis
+        if detail_level.value >= DetailLevel.DETAILED.value:
+            analyses["composition_analysis"] = self._analyze_composition(cv_image_rgb)
+        
+        # 12. Pattern recognition and regularity
+        if detail_level.value >= DetailLevel.EXTREME.value:
+            analyses["pattern_analysis"] = self._analyze_patterns(cv_image)
+        
+        # 13. Feature point and keypoint analysis
+        analyses["feature_analysis"] = self._detect_feature_points(cv_image)
+        
+        # 14. Gradient and flow analysis
+        if detail_level.value >= DetailLevel.RESEARCH.value:
+            analyses["gradient_analysis"] = self._analyze_gradients(cv_image)
+            analyses["optical_flow"] = self._estimate_optical_flow(cv_image)
+        
+        # 15. Aesthetic and artistic analysis
+        analyses["aesthetic_analysis"] = self._analyze_aesthetics(cv_image_rgb, detail_level)
+        
+        # 16. Semantic scene understanding
+        analyses["scene_understanding"] = self._analyze_scene_semantics(cv_image_rgb, analyses, detail_level)
+        
+        return analyses
+    
+    def _analyze_image_properties(self, image: Image.Image, cv_image: np.ndarray) -> Dict:
+        """Analyze basic image properties"""
+        height, width = cv_image.shape[:2]
+        
+        return {
+            "dimensions": {"width": width, "height": height},
+            "total_pixels": width * height,
+            "channels": cv_image.shape[2] if len(cv_image.shape) > 2 else 1,
+            "dpi": getattr(image, 'info', {}).get('dpi', (72, 72)),
+            "format": image.format,
+            "aspect_ratio": width / height if height > 0 else 0,
+            "orientation": "landscape" if width > height else "portrait" if height > width else "square"
+        }
+    
+    def _analyze_colors_comprehensive(self, image_rgb: np.ndarray, detail_level: DetailLevel) -> Dict:
+        """Comprehensive color analysis"""
+        # Convert to different color spaces
+        hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
+        lab = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2LAB)
+        
+        # Get dominant colors using KMeans
+        pixels = image_rgb.reshape(-1, 3)
+        sample_size = min(10000, len(pixels))
+        sample = pixels[np.random.choice(len(pixels), sample_size, replace=False)]
+        
+        n_colors = min(8, len(np.unique(sample, axis=0)))
+        if n_colors > 1:
+            kmeans = KMeans(n_clusters=n_colors, random_state=42, n_init=10)
+            kmeans.fit(sample)
+            dominant_colors = kmeans.cluster_centers_.astype(int)
+            color_counts = np.bincount(kmeans.labels_)
+            color_percentages = (color_counts / len(sample)) * 100
+        else:
+            dominant_colors = [np.mean(sample, axis=0).astype(int)]
+            color_percentages = [100]
+        
+        # Calculate color statistics
+        mean_rgb = np.mean(image_rgb, axis=(0, 1))
+        std_rgb = np.std(image_rgb, axis=(0, 1))
+        
+        # Color diversity and harmony
+        color_diversity = self._compute_color_diversity(image_rgb)
+        harmony_score = self._assess_color_harmony(dominant_colors)
+        
+        analysis = {
+            "color_spaces": {
+                "rgb_mean": mean_rgb.tolist(),
+                "rgb_std": std_rgb.tolist(),
+                "hsv_mean": np.mean(hsv, axis=(0, 1)).tolist(),
+                "lab_mean": np.mean(lab, axis=(0, 1)).tolist()
+            },
+            "dominant_colors": [
+                {
+                    "rgb": color.tolist(),
+                    "percentage": float(perc),
+                    "hex": f"#{color[0]:02x}{color[1]:02x}{color[2]:02x}",
+                    "name": self._get_color_name(color),
+                    "hsv": colorsys.rgb_to_hsv(color[0]/255, color[1]/255, color[2]/255)
+                }
+                for color, perc in zip(dominant_colors, color_percentages)
+            ],
+            "color_statistics": {
+                "mean_brightness": float(np.mean(hsv[:,:,2]) / 255),
+                "mean_saturation": float(np.mean(hsv[:,:,1]) / 255),
+                "mean_hue": float(np.mean(hsv[:,:,0])),
+                "contrast_ratio": float(np.max(mean_rgb) / np.min(mean_rgb)) if np.min(mean_rgb) > 0 else 0
+            },
+            "metrics": {
+                "color_diversity": float(color_diversity),
+                "color_harmony_score": float(harmony_score),
+                "color_uniformity": float(1 - color_diversity),
+                "vibrance_score": float(np.mean(hsv[:,:,1]) * np.std(hsv[:,:,2]) / 65025)
+            }
+        }
+        
+        if detail_level.value >= DetailLevel.DETAILED.value:
+            analysis["color_distribution"] = self._analyze_color_distribution(image_rgb)
+            analysis["color_zones"] = self._identify_color_zones(image_rgb)
+            
+        if detail_level.value >= DetailLevel.EXTREME.value:
+            analysis["color_gradients"] = self._analyze_color_gradients(image_rgb)
+            analysis["color_transitions"] = self._analyze_color_transitions(image_rgb)
+            
+        return analysis
+    
+    def _analyze_structure(self, image: np.ndarray, detail_level: DetailLevel) -> Dict:
+        """Analyze image structure, edges, and shapes"""
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        
+        # Edge detection with multiple methods
+        edges_canny = cv2.Canny(gray, 50, 150)
+        edges_laplacian = cv2.Laplacian(gray, cv2.CV_64F)
+        
+        # Sobel gradients
+        sobel_x = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+        sobel_y = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+        gradient_magnitude = np.sqrt(sobel_x**2 + sobel_y**2)
+        gradient_direction = np.arctan2(sobel_y, sobel_x)
+        
+        # Corner detection
+        corners = cv2.goodFeaturesToTrack(gray, maxCorners=200, qualityLevel=0.01, minDistance=10)
+        
+        # Line detection
+        lines = cv2.HoughLinesP(
+            edges_canny, 
+            rho=1, 
+            theta=np.pi/180, 
+            threshold=50, 
+            minLineLength=30, 
+            maxLineGap=10
+        )
+        
+        # Circle detection
+        circles = cv2.HoughCircles(
+            gray, 
+            cv2.HOUGH_GRADIENT, 
+            dp=1, 
+            minDist=20,
+            param1=50, 
+            param2=30, 
+            minRadius=5, 
+            maxRadius=100
+        )
+        
+        analysis = {
+            "edge_metrics": {
+                "edge_density": float(np.sum(edges_canny > 0) / edges_canny.size),
+                "edge_intensity": float(np.mean(edges_canny[edges_canny > 0])) if np.any(edges_canny > 0) else 0,
+                "edge_variance": float(np.var(edges_canny)),
+                "gradient_magnitude_mean": float(np.mean(gradient_magnitude)),
+                "gradient_direction_variance": float(np.var(gradient_direction))
+            },
+            "feature_counts": {
+                "corners": int(corners.shape[0]) if corners is not None else 0,
+                "lines": int(lines.shape[0]) if lines is not None else 0,
+                "circles": int(circles.shape[1]) if circles is not None else 0
+            },
+            "structural_indicators": {
+                "structural_complexity": float(np.sum(edges_canny > 0) / edges_canny.size * np.log1p(gradient_magnitude.mean())),
+                "shape_regularity": self._assess_shape_regularity(gray),
+                "symmetry_score": self._compute_symmetry_score(gray)
+            }
+        }
+        
+        if detail_level.value >= DetailLevel.DETAILED.value and lines is not None:
+            analysis["line_analysis"] = self._analyze_lines(lines)
+            
+        if detail_level.value >= DetailLevel.EXTREME.value and corners is not None:
+            analysis["corner_distribution"] = self._analyze_corner_distribution(corners)
+            
+        return analysis
+    
+    def _analyze_texture_comprehensive(self, image: np.ndarray, detail_level: DetailLevel) -> Dict:
+        """Comprehensive texture analysis"""
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        
+        # Local Binary Patterns implementation (simplified)
+        lbp_features = self._compute_lbp_features(gray)
+        
+        # GLCM texture features
+        glcm_features = self._compute_glcm_features(gray)
+        
+        # Statistical texture measures
+        texture_stats = {
+            "smoothness": float(1 - 1/(1 + np.var(gray))),
+            "uniformity": float(np.sum(np.square(np.histogram(gray.ravel(), 256)[0] / gray.size))),
+            "entropy": self._compute_image_entropy(gray),
+            "contrast": float(np.std(gray)),
+            "homogeneity": float(1 - np.mean(np.abs(gray - np.mean(gray))) / 255),
+            "roughness": float(np.mean(np.abs(cv2.Sobel(gray, cv2.CV_64F, 1, 1, ksize=3))))
+        }
+        
+        # Gabor filter responses
+        gabor_responses = self._compute_gabor_responses_cv2(gray)
+        
+        analysis = {
+            "statistical_features": texture_stats,
+            "lbp_features": lbp_features,
+            "glcm_features": glcm_features,
+            "gabor_responses": gabor_responses,
+            "texture_types": self._classify_texture_types(gray),
+            "texture_metrics": {
+                "texture_complexity": float(texture_stats["entropy"] * texture_stats["contrast"]),
+                "pattern_strength": float(np.mean(gabor_responses)),
+                "granularity": self._estimate_granularity(gray)
+            }
+        }
+        
+        if detail_level.value >= DetailLevel.DETAILED.value:
+            analysis["texture_gradient"] = self._compute_texture_gradient(gray)
+            
+        if detail_level.value >= DetailLevel.EXTREME.value:
+            analysis["fractal_analysis"] = self._analyze_fractal_dimensions(gray)
+            
+        return analysis
+    
+    def _detect_objects_traditional(self, image: np.ndarray, detail_level: DetailLevel) -> Dict:
+        """Detect objects using traditional computer vision"""
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        objects = []
+        
+        # Face detection using Haar cascades
+        faces = []
+        if 'face' in self.cascades:
+            faces = self.cascades['face'].detectMultiScale(
+                gray, 
+                scaleFactor=1.1, 
+                minNeighbors=5, 
+                minSize=(30, 30)
+            )
+        
+        for (x, y, w, h) in faces:
+            objects.append({
+                "type": "human_face",
+                "category": "person",
+                "confidence": 0.85,
+                "bounding_box": {"x": int(x), "y": int(y), "width": int(w), "height": int(h)},
+                "center": {"x": int(x + w/2), "y": int(y + h/2)},
+                "area": int(w * h),
+                "aspect_ratio": w / h if h > 0 else 0,
+                "relative_size": (w * h) / (image.shape[0] * image.shape[1])
+            })
+        
+        # Edge-based object detection
+        edges = cv2.Canny(gray, 30, 100)
+        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        for i, contour in enumerate(contours[:15]):  # Limit to significant contours
+            area = cv2.contourArea(contour)
+            if area > 1000:  # Minimum area threshold
+                x, y, w, h = cv2.boundingRect(contour)
+                perimeter = cv2.arcLength(contour, True)
+                
+                # Shape classification
+                shape_type = self._classify_shape(contour)
+                
+                objects.append({
+                    "type": shape_type,
+                    "category": "object",
+                    "confidence": min(0.75, area / (image.shape[0] * image.shape[1]) * 10),
+                    "bounding_box": {"x": int(x), "y": int(y), "width": int(w), "height": int(h)},
+                    "center": {"x": int(x + w/2), "y": int(y + h/2)},
+                    "area": int(area),
+                    "perimeter": float(perimeter),
+                    "circularity": float(4 * np.pi * area / (perimeter ** 2)) if perimeter > 0 else 0,
+                    "solidity": float(area / cv2.contourArea(cv2.convexHull(contour))) if cv2.contourArea(cv2.convexHull(contour)) > 0 else 0,
+                    "aspect_ratio": w / h if h > 0 else 0
+                })
+        
+        # Color-based object detection
+        hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        color_objects = self._detect_color_based_objects(hsv)
+        objects.extend(color_objects)
+        
+        # Sort objects by area (largest first)
+        objects.sort(key=lambda x: x["area"], reverse=True)
+        
+        return {
+            "objects": objects,
+            "statistics": {
+                "total_objects": len(objects),
+                "face_count": len(faces),
+                "human_count": len(faces),  # Assuming each face is a person
+                "object_density": len(objects) / (image.shape[0] * image.shape[1] * 1e-6),
+                "average_object_size": np.mean([obj["area"] for obj in objects]) if objects else 0,
+                "size_distribution": [obj["area"] for obj in objects[:10]]
+            },
+            "detection_methods": ["haar_cascades", "edge_contours", "color_segmentation"]
+        }
+    
+    def _extract_text_ocr_space(self, image_path: str) -> Dict:
+        """Extract text using OCR.Space API"""
+        try:
+            # Use the provided OCR function
+            extracted_text = ocr(image_path=image_path, api_key=self.ocr_api_key)
+            
+            # Additional processing for text analysis
+            text_analysis = {
+                "raw_text": extracted_text,
+                "character_count": len(extracted_text),
+                "word_count": len(extracted_text.split()),
+                "line_count": len(extracted_text.split('\n')),
+                "text_presence": "significant" if len(extracted_text) > 50 else "minimal" if len(extracted_text) > 10 else "none",
+                "language_hints": self._detect_language_hints(extracted_text),
+                "text_blocks": self._segment_text_blocks(extracted_text)
+            }
+            
+            # Check if OCR returned an error
+            if extracted_text.startswith(("Error:", "❌", "⚠️")):
+                text_analysis["ocr_status"] = "failed"
+                text_analysis["error_message"] = extracted_text
+            else:
+                text_analysis["ocr_status"] = "success"
+                
+            return text_analysis
+            
+        except Exception as e:
+            return {
+                "raw_text": f"OCR extraction failed: {str(e)}",
+                "ocr_status": "error",
+                "error_message": str(e)
+            }
+    
+    def _create_visual_semantic_encoding(self, analyses: Dict) -> Dict:
+        """Create a comprehensive visual-semantic encoding for LLM consumption"""
+        encoding = {
+            "scene_summary": self._generate_scene_summary(analyses),
+            "visual_elements": self._extract_visual_elements(analyses),
+            "spatial_layout": self._describe_spatial_layout(analyses),
+            "color_palette": self._describe_color_palette(analyses),
+            "texture_description": self._describe_texture_comprehensive(analyses),
+            "composition_analysis": self._describe_composition(analyses),
+            "semantic_context": self._infer_semantic_context(analyses),
+            "atmosphere_mood": self._describe_atmosphere(analyses),
+            "technical_details": self._extract_technical_details(analyses)
+        }
+        
+        # Add detailed object descriptions
+        if "object_detection" in analyses:
+            encoding["objects_detailed"] = self._describe_objects_detailed(
+                analyses["object_detection"]["objects"]
+            )
+        
+        # Add text context if present
+        if "text_extraction" in analyses:
+            text_data = analyses["text_extraction"]
+            if text_data.get("ocr_status") == "success" and len(text_data.get("raw_text", "")) > 10:
+                encoding["text_context"] = {
+                    "content": text_data["raw_text"],
+                    "role": self._infer_text_role(text_data["raw_text"])
+                }
+        
+        return encoding
+    
+    def _generate_detailed_description(self, analyses: Dict, detail_level: DetailLevel) -> str:
+        """Generate a natural language description from analyses"""
+        description_parts = []
+        
+        # 1. Scene overview
+        scene_summary = analyses.get("scene_understanding", {}).get("scene_type", "unknown scene")
+        description_parts.append(f"## SCENE OVERVIEW\nThis image depicts {scene_summary}.")
+        
+        # 2. Key objects
+        objects = analyses.get("object_detection", {}).get("objects", [])
+        if objects:
+            object_desc = ", ".join([f"{obj.get('type', 'object')}" for obj in objects[:5]])
+            description_parts.append(f"## KEY OBJECTS\nPrimary elements include: {object_desc}.")
+        
+        # 3. Color description
+        colors = analyses.get("color_analysis", {}).get("dominant_colors", [])
+        if colors:
+            color_desc = ", ".join([f"{c.get('name', 'color')} ({c.get('percentage', 0):.1f}%)" 
+                                   for c in colors[:3]])
+            description_parts.append(f"## COLOR PALETTE\nDominant colors are: {color_desc}.")
+        
+        # 4. Composition and layout
+        comp = analyses.get("composition_analysis", {})
+        if comp:
+            description_parts.append(f"## COMPOSITION\n{comp.get('description', 'Standard composition')}.")
+        
+        # 5. Text content
+        text_data = analyses.get("text_extraction", {})
+        if text_data.get("ocr_status") == "success" and len(text_data.get("raw_text", "")) > 20:
+            description_parts.append(f"## TEXT CONTENT\nContains text: \"{text_data['raw_text'][:100]}...\"")
+        
+        # 6. Texture and details
+        texture = analyses.get("texture_analysis", {})
+        if texture.get("texture_types"):
+            texture_desc = texture["texture_types"][0] if texture["texture_types"] else "mixed textures"
+            description_parts.append(f"## TEXTURE\nFeatures {texture_desc}.")
+        
+        # 7. Lighting and atmosphere
+        atmosphere = analyses.get("scene_understanding", {}).get("atmosphere", {})
+        if atmosphere:
+            light_desc = atmosphere.get("lighting_condition", "standard lighting")
+            description_parts.append(f"## ATMOSPHERE\n{light_desc.capitalize()}.")
+        
+        # 8. Technical details
+        tech = analyses.get("image_properties", {})
+        if tech:
+            description_parts.append(f"## TECHNICAL\nImage dimensions: {tech.get('dimensions', {}).get('width', 0)}x{tech.get('dimensions', {}).get('height', 0)} pixels.")
+        
+        # Add detailed sections for higher detail levels
+        if detail_level.value >= DetailLevel.DETAILED.value:
+            # Structural details
+            structure = analyses.get("structural_analysis", {})
+            if structure:
+                complexity = structure.get("structural_indicators", {}).get("structural_complexity", 0)
+                complexity_desc = "highly complex" if complexity > 0.7 else "moderately complex" if complexity > 0.3 else "simple"
+                description_parts.append(f"Structure is {complexity_desc}.")
+            
+            # Pattern details
+            patterns = analyses.get("pattern_analysis", {})
+            if patterns:
+                pattern_desc = patterns.get("dominant_pattern", "no dominant pattern")
+                description_parts.append(f"Pattern analysis shows {pattern_desc}.")
+        
+        if detail_level.value >= DetailLevel.EXTREME.value:
+            # Detailed object relationships
+            spatial = analyses.get("object_detection", {}).get("spatial_relationships", {})
+            if spatial:
+                rel_desc = spatial.get("primary_relationship", "standard arrangement")
+                description_parts.append(f"Objects are arranged in a {rel_desc}.")
+            
+            # Color theory analysis
+            colors = analyses.get("color_analysis", {})
+            if colors.get("metrics", {}).get("color_harmony_score"):
+                harmony = colors["metrics"]["color_harmony_score"]
+                harmony_desc = "harmonious" if harmony > 0.7 else "discordant" if harmony < 0.3 else "neutral"
+                description_parts.append(f"Color harmony is {harmony_desc}.")
+        
+        return "\n\n".join(description_parts)
+    
+    # Helper methods for various analyses
+    def _compute_color_diversity(self, image_rgb: np.ndarray) -> float:
+        """Compute color diversity score"""
+        pixels = image_rgb.reshape(-1, 3)
+        unique_colors = len(np.unique(pixels, axis=0))
+        max_possible = min(256**3, len(pixels))
+        return unique_colors / max_possible
+    
+    def _assess_color_harmony(self, colors: List[np.ndarray]) -> float:
+        """Assess color harmony score"""
+        if len(colors) < 2:
+            return 1.0
+        
+        harmonies = []
+        for i in range(len(colors)):
+            for j in range(i+1, len(colors)):
+                # Simple harmony based on hue difference
+                hsv1 = colorsys.rgb_to_hsv(colors[i][0]/255, colors[i][1]/255, colors[i][2]/255)
+                hsv2 = colorsys.rgb_to_hsv(colors[j][0]/255, colors[j][1]/255, colors[j][2]/255)
+                hue_diff = abs(hsv1[0] - hsv2[0])
+                harmony = 1.0 - min(hue_diff, 1.0 - hue_diff)  # Complementary or similar hues are harmonious
+                harmonies.append(harmony)
+        
+        return np.mean(harmonies) if harmonies else 0.5
+    
+    def _get_color_name(self, rgb_color: np.ndarray) -> str:
+        """Get closest named color"""
+        min_distance = float('inf')
+        closest_color = "Unknown"
+        
+        for named_rgb, name in self.color_names.items():
+            distance = np.sqrt(np.sum((rgb_color - named_rgb) ** 2))
+            if distance < min_distance:
+                min_distance = distance
+                closest_color = name
+        
+        return closest_color
+    
+    def _classify_shape(self, contour: np.ndarray) -> str:
+        """Classify contour shape"""
+        area = cv2.contourArea(contour)
+        perimeter = cv2.arcLength(contour, True)
+        
+        if perimeter == 0:
+            return "irregular"
+        
+        circularity = 4 * np.pi * area / (perimeter ** 2)
+        
+        # Approximate the contour to reduce number of vertices
+        epsilon = 0.02 * perimeter
+        approx = cv2.approxPolyDP(contour, epsilon, True)
+        vertices = len(approx)
+        
+        if circularity > 0.8:
+            return "circular"
+        elif vertices == 3:
+            return "triangular"
+        elif vertices == 4:
+            # Check if it's rectangular
+            x, y, w, h = cv2.boundingRect(contour)
+            aspect_ratio = w / float(h)
+            if 0.8 < aspect_ratio < 1.2:
+                return "square"
+            else:
+                return "rectangular"
+        elif vertices == 5:
+            return "pentagonal"
+        elif vertices == 6:
+            return "hexagonal"
+        elif vertices > 6:
+            return "polygonal"
+        else:
+            return "irregular"
+    
+    def _detect_language_hints(self, text: str) -> List[str]:
+        """Detect language hints from text"""
+        hints = []
+        
+        # Simple character-based detection
+        if any(c in text for c in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"):
+            hints.append("english_likely")
+        
+        if any(c in text for c in "áéíóúÁÉÍÓÚñÑ"):
+            hints.append("spanish_likely")
+        
+        if any(c in text for c in "äöüßÄÖÜ"):
+            hints.append("german_likely")
+        
+        if any(c in text for c in "àâæçéèêëîïôùûüÿÀÂÆÇÉÈÊËÎÏÔÙÛÜŸ"):
+            hints.append("french_likely")
+        
+        # Check for common patterns
+        if "the" in text.lower() or "and" in text.lower():
+            hints.append("english_common_words")
+        
+        return hints
+    
+    def _segment_text_blocks(self, text: str) -> List[Dict]:
+        """Segment text into logical blocks"""
+        lines = text.strip().split('\n')
+        blocks = []
+        
+        current_block = []
+        for line in lines:
+            line = line.strip()
+            if line:  # Non-empty line
+                current_block.append(line)
+            elif current_block:  # Empty line with previous content
+                blocks.append({
+                    "text": " ".join(current_block),
+                    "line_count": len(current_block),
+                    "word_count": len(" ".join(current_block).split())
+                })
+                current_block = []
+        
+        # Add last block if exists
+        if current_block:
+            blocks.append({
+                "text": " ".join(current_block),
+                "line_count": len(current_block),
+                "word_count": len(" ".join(current_block).split())
+            })
+        
+        return blocks
+    
+    def _generate_scene_summary(self, analyses: Dict) -> str:
+        """Generate a scene summary from analyses"""
+        objects = analyses.get("object_detection", {}).get("objects", [])
+        colors = analyses.get("color_analysis", {}).get("dominant_colors", [])
+        
+        # Count object types
+        object_counts = {}
+        for obj in objects:
+            obj_type = obj.get("type", "unknown")
+            object_counts[obj_type] = object_counts.get(obj_type, 0) + 1
+        
+        # Build summary
+        if object_counts:
+            primary_objects = sorted(object_counts.items(), key=lambda x: x[1], reverse=True)[:3]
+            obj_desc = ", ".join([f"{count} {obj_type}(s)" for obj_type, count in primary_objects])
+        else:
+            obj_desc = "no distinct objects"
+        
+        if colors:
+            color_desc = ", ".join([color.get("name", "color") for color in colors[:2]])
+        else:
+            color_desc = "varied colors"
+        
+        return f"A scene with {obj_desc} in {color_desc} tones."
+    
+    def _extract_visual_elements(self, analyses: Dict) -> List[Dict]:
+        """Extract key visual elements"""
+        elements = []
+        
+        # From object detection
+        objects = analyses.get("object_detection", {}).get("objects", [])
+        for obj in objects[:10]:  # Top 10 objects
+            elements.append({
+                "type": "object",
+                "category": obj.get("type", "unknown"),
+                "confidence": obj.get("confidence", 0),
+                "size": obj.get("relative_size", 0),
+                "position": obj.get("center", {})
+            })
+        
+        # From color analysis
+        colors = analyses.get("color_analysis", {}).get("dominant_colors", [])
+        for color in colors[:3]:
+            elements.append({
+                "type": "color",
+                "value": color.get("hex", "#000000"),
+                "name": color.get("name", "unknown"),
+                "percentage": color.get("percentage", 0)
+            })
+        
+        # From texture analysis
+        textures = analyses.get("texture_analysis", {}).get("texture_types", [])
+        for texture in textures[:2]:
+            elements.append({
+                "type": "texture",
+                "description": texture
+            })
+        
+        return elements
+    
+    def _describe_spatial_layout(self, analyses: Dict) -> Dict:
+        """Describe spatial layout of the image"""
+        objects = analyses.get("object_detection", {}).get("objects", [])
+        
+        if not objects:
+            return {"description": "No distinct objects detected", "arrangement": "uniform"}
+        
+        # Calculate object distribution
+        positions = [obj.get("center", {}) for obj in objects]
+        x_coords = [pos.get("x", 0) for pos in positions]
+        y_coords = [pos.get("y", 0) for pos in positions]
+        
+        # Determine arrangement pattern
+        arrangement = "scattered"
+        if len(objects) >= 3:
+            # Check for linear arrangement
+            if np.std(y_coords) / np.mean(y_coords) < 0.1:
+                arrangement = "horizontal_line"
+            elif np.std(x_coords) / np.mean(x_coords) < 0.1:
+                arrangement = "vertical_line"
+        
+        return {
+            "object_count": len(objects),
+            "arrangement": arrangement,
+            "centroid": {
+                "x": np.mean(x_coords) if x_coords else 0,
+                "y": np.mean(y_coords) if y_coords else 0
+            },
+            "spread": {
+                "horizontal": np.std(x_coords) if x_coords else 0,
+                "vertical": np.std(y_coords) if y_coords else 0
+            }
+        }
+    
+    def _describe_color_palette(self, analyses: Dict) -> Dict:
+        """Describe the color palette"""
+        colors = analyses.get("color_analysis", {}).get("dominant_colors", [])
+        metrics = analyses.get("color_analysis", {}).get("metrics", {})
+        
+        palette = {
+            "primary_colors": [color.get("name", "unknown") for color in colors[:3]],
+            "color_harmony": metrics.get("color_harmony_score", 0),
+            "vibrance": metrics.get("vibrance_score", 0),
+            "brightness": metrics.get("mean_brightness", 0),
+            "saturation": metrics.get("mean_saturation", 0),
+            "palette_type": self._classify_palette_type(colors, metrics)
+        }
+        
+        return palette
+    
+    def _classify_palette_type(self, colors: List[Dict], metrics: Dict) -> str:
+        """Classify the color palette type"""
+        if len(colors) < 2:
+            return "monochromatic"
+        
+        # Get hue values
+        hues = []
+        for color in colors[:3]:
+            hsv = color.get("hsv", (0, 0, 0))
+            if isinstance(hsv, tuple):
+                hues.append(hsv[0])
+        
+        if not hues:
+            return "neutral"
+        
+        # Analyze hue distribution
+        hue_diff = max(hues) - min(hues)
+        
+        if hue_diff < 0.1:
+            return "monochromatic"
+        elif 0.3 < hue_diff < 0.7:
+            return "analogous"
+        elif hue_diff > 0.7:
+            return "complementary"
+        else:
+            return "mixed"
+    
+    def _create_thumbnail_base64(self, image: Image.Image, size: tuple = (100, 100)) -> str:
+        """Create base64 encoded thumbnail"""
+        thumbnail = image.copy()
+        thumbnail.thumbnail(size)
+        
+        buffered = io.BytesIO()
+        thumbnail.save(buffered, format="JPEG", quality=85)
+        return base64.b64encode(buffered.getvalue()).decode('utf-8')
+    
+    # Additional analysis methods (simplified implementations)
+    def _analyze_regions(self, image_rgb: np.ndarray, detail_level: DetailLevel) -> Dict:
+        """Analyze image regions"""
+        gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
+        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary, connectivity=8)
+        
+        return {
+            "connected_components": num_labels - 1,  # Exclude background
+            "region_sizes": [int(stat[cv2.CC_STAT_AREA]) for stat in stats[1:min(num_labels, 20)]]
+        }
+    
+    def _analyze_contours(self, image: np.ndarray) -> Dict:
+        """Analyze image contours"""
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        edges = cv2.Canny(gray, 50, 150)
+        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        return {
+            "contour_count": len(contours),
+            "total_contour_length": sum([cv2.arcLength(c, True) for c in contours]),
+            "average_contour_area": np.mean([cv2.contourArea(c) for c in contours]) if contours else 0
+        }
+    
+    def _analyze_image_quality(self, image: np.ndarray) -> Dict:
+        """Analyze image quality metrics"""
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        
+        # Calculate sharpness (variance of Laplacian)
+        laplacian = cv2.Laplacian(gray, cv2.CV_64F)
+        sharpness = laplacian.var()
+        
+        # Calculate noise (variance of pixel intensities)
+        noise = np.var(gray)
+        
+        # Calculate contrast
+        contrast = gray.std()
+        
+        return {
+            "sharpness": float(sharpness),
+            "noise_level": float(noise),
+            "contrast": float(contrast),
+            "brightness": float(gray.mean()),
+            "dynamic_range": float(gray.max() - gray.min())
+        }
+    
+    def _analyze_distributions(self, image_rgb: np.ndarray) -> Dict:
+        """Analyze pixel intensity distributions"""
+        gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
+        
+        # Histogram analysis
+        hist, bins = np.histogram(gray.ravel(), 256, [0, 256])
+        
+        return {
+            "histogram_peaks": len([i for i in range(1, 255) if hist[i] > hist[i-1] and hist[i] > hist[i+1]]),
+            "histogram_skewness": float(((hist - hist.mean())**3).mean() / (hist.std()**3)) if hist.std() > 0 else 0,
+            "histogram_kurtosis": float(((hist - hist.mean())**4).mean() / (hist.std()**4)) if hist.std() > 0 else 0,
+            "pixel_intensity_mean": float(gray.mean()),
+            "pixel_intensity_std": float(gray.std())
+        }
+    
+    def _analyze_composition(self, image_rgb: np.ndarray) -> Dict:
+        """Analyze image composition"""
+        height, width = image_rgb.shape[:2]
+        
+        # Rule of thirds grid
+        third_x = width // 3
+        third_y = height // 3
+        
+        # Calculate visual weight distribution
+        gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
+        sobel = cv2.Sobel(gray, cv2.CV_64F, 1, 1, ksize=3)
+        
+        # Divide into 9 regions (3x3 grid)
+        regions = []
+        for i in range(3):
+            for j in range(3):
+                x_start = i * third_x
+                x_end = (i + 1) * third_x
+                y_start = j * third_y
+                y_end = (j + 1) * third_y
+                
+                region = sobel[y_start:y_end, x_start:x_end]
+                regions.append({
+                    "region": f"{i},{j}",
+                    "activity": float(region.mean()) if region.size > 0 else 0,
+                    "position": {"row": i, "col": j}
+                })
+        
+        # Find most active region
+        most_active = max(regions, key=lambda x: x["activity"])
+        
+        return {
+            "rule_of_thirds": {
+                "grid": regions,
+                "most_active_region": most_active["region"],
+                "activity_score": most_active["activity"]
+            },
+            "balance_score": 1.0 - (abs(most_active["activity"] - np.mean([r["activity"] for r in regions])) / 255),
+            "composition_type": self._classify_composition(most_active["position"])
+        }
+    
+    def _classify_composition(self, position: Dict) -> str:
+        """Classify composition based on active region"""
+        row, col = position.get("row", 1), position.get("col", 1)
+        
+        if row == 1 and col == 1:
+            return "centered"
+        elif row == 0 or row == 2:
+            return "horizontal_dominant"
+        elif col == 0 or col == 2:
+            return "vertical_dominant"
+        elif (row == 0 and col == 0) or (row == 0 and col == 2) or (row == 2 and col == 0) or (row == 2 and col == 2):
+            return "diagonal"
+        else:
+            return "balanced"
+    
+    def _analyze_patterns(self, image: np.ndarray) -> Dict:
+        """Analyze patterns in the image"""
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        
+        # Auto-correlation for pattern detection
+        autocorr = cv2.matchTemplate(gray, gray, cv2.TM_CCORR_NORMED)
+        
+        # FFT for periodic patterns
+        fft = np.fft.fft2(gray)
+        fft_shift = np.fft.fftshift(fft)
+        magnitude = np.abs(fft_shift)
+        
+        return {
+            "pattern_strength": float(autocorr.max()),
+            "periodicity_score": float(np.std(magnitude) / np.mean(magnitude)) if np.mean(magnitude) > 0 else 0,
+            "regularity": "high" if autocorr.max() > 0.8 else "medium" if autocorr.max() > 0.5 else "low"
+        }
+    
+    def _detect_feature_points(self, image: np.ndarray) -> Dict:
+        """Detect feature points using traditional methods"""
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        
+        # Harris corner detection
+        corners = cv2.cornerHarris(gray, 2, 3, 0.04)
+        
+        # Good features to track
+        good_corners = cv2.goodFeaturesToTrack(gray, 100, 0.01, 10)
+        
+        return {
+            "harris_corners": int(np.sum(corners > 0.01 * corners.max())),
+            "good_features": int(good_corners.shape[0]) if good_corners is not None else 0,
+            "feature_density": int(good_corners.shape[0]) / (gray.shape[0] * gray.shape[1]) * 1e6 if good_corners is not None else 0
+        }
+    
+    def _analyze_gradients(self, image: np.ndarray) -> Dict:
+        """Analyze image gradients"""
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        
+        sobel_x = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+        sobel_y = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+        
+        magnitude = np.sqrt(sobel_x**2 + sobel_y**2)
+        direction = np.arctan2(sobel_y, sobel_x)
+        
+        return {
+            "gradient_magnitude_mean": float(magnitude.mean()),
+            "gradient_magnitude_std": float(magnitude.std()),
+            "gradient_direction_variance": float(direction.var()),
+            "edge_orientation_histogram": np.histogram(direction.flatten(), bins=8, range=(-np.pi, np.pi))[0].tolist()
+        }
+    
+    def _estimate_optical_flow(self, image: np.ndarray) -> Dict:
+        """Estimate optical flow (simplified for single image)"""
+        # For single image, we'll create a synthetic flow
+        height, width = image.shape[:2]
+        
+        # Create a simple radial flow pattern
+        flow_x = np.zeros((height, width), dtype=np.float32)
+        flow_y = np.zeros((height, width), dtype=np.float32)
+        
+        center_x, center_y = width // 2, height // 2
+        
+        for y in range(height):
+            for x in range(width):
+                dx = x - center_x
+                dy = y - center_y
+                dist = np.sqrt(dx**2 + dy**2)
+                if dist > 0:
+                    flow_x[y, x] = -dy / dist
+                    flow_y[y, x] = dx / dist
+        
+        return {
+            "flow_magnitude_mean": float(np.sqrt(flow_x**2 + flow_y**2).mean()),
+            "flow_direction_mean": float(np.arctan2(flow_y.mean(), flow_x.mean())),
+            "flow_pattern": "radial"  # Simplified classification
+        }
+    
+    def _analyze_aesthetics(self, image_rgb: np.ndarray, detail_level: DetailLevel) -> Dict:
+        """Analyze aesthetic qualities"""
+        # Calculate basic aesthetic metrics
+        gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
+        
+        # Contrast score
+        contrast = gray.std()
+        
+        # Brightness score (optimal around 0.5)
+        brightness = gray.mean() / 255
+        brightness_score = 1.0 - abs(brightness - 0.5) * 2
+        
+        # Colorfulness (simplified)
+        hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
+        colorfulness = hsv[:,:,1].mean() / 255
+        
+        # Rule of thirds adherence
+        composition = self._analyze_composition(image_rgb)
+        rule_of_thirds_score = composition.get("balance_score", 0.5)
+        
+        # Symmetry score
+        symmetry = self._compute_symmetry_score(gray)
+        
+        # Sharpness
+        laplacian = cv2.Laplacian(gray, cv2.CV_64F)
+        sharpness = laplacian.var() / 1000  # Normalized
+        
+        aesthetics = {
+            "contrast_score": float(contrast / 128),  # Normalized
+            "brightness_score": float(brightness_score),
+            "colorfulness_score": float(colorfulness),
+            "composition_score": float(rule_of_thirds_score),
+            "symmetry_score": float(symmetry),
+            "sharpness_score": float(min(sharpness, 1.0)),
+            "overall_aesthetic_score": float(
+                (contrast/128 + brightness_score + colorfulness + rule_of_thirds_score + symmetry + min(sharpness, 1.0)) / 6
+            )
+        }
+        
+        if detail_level.value >= DetailLevel.DETAILED.value:
+            # Add detailed aesthetic analysis
+            aesthetics["visual_balance"] = self._assess_visual_balance(image_rgb)
+            aesthetics["harmony_score"] = self._compute_harmony_score(image_rgb)
+        
+        return aesthetics
+    
+    def _compute_symmetry_score(self, gray_image: np.ndarray) -> float:
+        """Compute symmetry score of an image"""
+        height, width = gray_image.shape
+        
+        # Vertical symmetry
+        if width > 1:
+            left_half = gray_image[:, :width//2]
+            right_half = gray_image[:, width//2:] if width % 2 == 0 else gray_image[:, width//2+1:]
+            right_half_flipped = np.fliplr(right_half)
+            
+            # Resize to same dimensions if needed
+            min_height = min(left_half.shape[0], right_half_flipped.shape[0])
+            min_width = min(left_half.shape[1], right_half_flipped.shape[1])
+            
+            left_crop = left_half[:min_height, :min_width]
+            right_crop = right_half_flipped[:min_height, :min_width]
+            
+            vertical_symmetry = 1.0 - np.mean(np.abs(left_crop - right_crop)) / 255
+        else:
+            vertical_symmetry = 1.0
+        
+        # Horizontal symmetry
+        if height > 1:
+            top_half = gray_image[:height//2, :]
+            bottom_half = gray_image[height//2:, :] if height % 2 == 0 else gray_image[height//2+1:, :]
+            bottom_half_flipped = np.flipud(bottom_half)
+            
+            min_height = min(top_half.shape[0], bottom_half_flipped.shape[0])
+            min_width = min(top_half.shape[1], bottom_half_flipped.shape[1])
+            
+            top_crop = top_half[:min_height, :min_width]
+            bottom_crop = bottom_half_flipped[:min_height, :min_width]
+            
+            horizontal_symmetry = 1.0 - np.mean(np.abs(top_crop - bottom_crop)) / 255
+        else:
+            horizontal_symmetry = 1.0
+        
+        return (vertical_symmetry + horizontal_symmetry) / 2
+    
+    def _assess_visual_balance(self, image_rgb: np.ndarray) -> Dict:
+        """Assess visual balance of the image"""
+        gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
+        height, width = gray.shape
+        
+        # Divide into quadrants
+        mid_x, mid_y = width // 2, height // 2
+        
+        quadrants = [
+            gray[:mid_y, :mid_x],  # Top-left
+            gray[:mid_y, mid_x:],  # Top-right
+            gray[mid_y:, :mid_x],  # Bottom-left
+            gray[mid_y:, mid_x:]   # Bottom-right
+        ]
+        
+        quadrant_means = [q.mean() for q in quadrants]
+        
+        # Calculate balance
+        top_bottom_balance = 1.0 - abs(quadrant_means[0] + quadrant_means[1] - quadrant_means[2] - quadrant_means[3]) / 255
+        left_right_balance = 1.0 - abs(quadrant_means[0] + quadrant_means[2] - quadrant_means[1] - quadrant_means[3]) / 255
+        
+        return {
+            "top_bottom_balance": float(top_bottom_balance),
+            "left_right_balance": float(left_right_balance),
+            "overall_balance": float((top_bottom_balance + left_right_balance) / 2),
+            "quadrant_weights": [float(m / 255) for m in quadrant_means]
+        }
+    
+    def _compute_harmony_score(self, image_rgb: np.ndarray) -> float:
+        """Compute overall harmony score"""
+        # Combine multiple harmony factors
+        symmetry = self._compute_symmetry_score(cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY))
+        balance = self._assess_visual_balance(image_rgb)["overall_balance"]
+        
+        # Color harmony
+        hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
+        hue_std = hsv[:,:,0].std()
+        color_harmony = 1.0 - min(hue_std / 90, 1.0)  # Lower hue std = more harmonious
+        
+        return (symmetry + balance + color_harmony) / 3
+    
+    def _analyze_scene_semantics(self, image_rgb: np.ndarray, analyses: Dict, detail_level: DetailLevel) -> Dict:
+        """Analyze scene semantics from visual features"""
+        objects = analyses.get("object_detection", {}).get("objects", [])
+        colors = analyses.get("color_analysis", {}).get("dominant_colors", [])
+        textures = analyses.get("texture_analysis", {}).get("texture_types", [])
+        
+        # Determine scene type based on objects
+        scene_type = "general"
+        object_types = [obj.get("type", "").lower() for obj in objects]
+        
+        if any("face" in obj_type for obj_type in object_types):
+            scene_type = "portrait"
+        elif any("person" in obj_type or "human" in obj_type for obj_type in object_types):
+            scene_type = "people"
+        elif any("car" in obj_type or "vehicle" in obj_type for obj_type in object_types):
+            scene_type = "urban" if len(objects) > 3 else "transportation"
+        elif any("tree" in obj_type or "plant" in obj_type for obj_type in object_types):
+            scene_type = "nature"
+        elif any("building" in obj_type or "house" in obj_type for obj_type in object_types):
+            scene_type = "architecture"
+        
+        # Determine atmosphere based on colors
+        atmosphere = "neutral"
+        if colors:
+            color_names = [color.get("name", "").lower() for color in colors[:2]]
+            if any(c in ["blue", "gray", "white"] for c in color_names):
+                atmosphere = "calm"
+            elif any(c in ["red", "orange", "yellow"] for c in color_names):
+                atmosphere = "warm"
+            elif any(c in ["green", "brown"] for c in color_names):
+                atmosphere = "natural"
+        
+        # Determine lighting condition
+        brightness = analyses.get("color_analysis", {}).get("metrics", {}).get("mean_brightness", 0.5)
+        if brightness > 0.7:
+            lighting = "bright"
+        elif brightness < 0.3:
+            lighting = "dim"
+        else:
+            lighting = "moderate"
+        
+        # Determine time of day (simplified)
+        time_of_day = "day"
+        if brightness < 0.4 and any("blue" in color.get("name", "").lower() for color in colors):
+            time_of_day = "night"
+        elif 0.6 < brightness < 0.8 and any("orange" in color.get("name", "").lower() for color in colors):
+            time_of_day = "sunset"
+        
+        scene_analysis = {
+            "scene_type": scene_type,
+            "atmosphere": atmosphere,
+            "lighting_condition": lighting,
+            "time_of_day": time_of_day,
+            "activity_level": "high" if len(objects) > 5 else "medium" if len(objects) > 2 else "low",
+            "environment_type": self._determine_environment(object_types, colors)
+        }
+        
+        if detail_level.value >= DetailLevel.DETAILED.value:
+            # Add detailed semantic analysis
+            scene_analysis["mood"] = self._infer_mood(colors, objects)
+            scene_analysis["context_hints"] = self._extract_context_hints(objects, analyses.get("text_extraction", {}))
+        
+        return scene_analysis
+    
+    def _determine_environment(self, object_types: List[str], colors: List[Dict]) -> str:
+        """Determine environment type"""
+        color_names = [color.get("name", "").lower() for color in colors]
+        
+        if any("tree" in obj or "plant" in obj for obj in object_types):
+            if any("blue" in color or "brown" in color for color in color_names):
+                return "outdoor_natural"
+            else:
+                return "garden"
+        
+        if any("building" in obj or "house" in obj for obj in object_types):
+            return "urban"
+        
+        if any("water" in obj or "ocean" in obj for obj in object_types):
+            return "aquatic"
+        
+        if any("mountain" in obj or "hill" in obj for obj in object_types):
+            return "mountainous"
+        
+        return "indoor" if any("furniture" in obj or "room" in obj for obj in object_types) else "unknown"
+    
+    def _infer_mood(self, colors: List[Dict], objects: List[Dict]) -> str:
+        """Infer mood from colors and objects"""
+        color_names = [color.get("name", "").lower() for color in colors]
+        
+        # Color-based mood
+        if any(c in ["red", "orange", "yellow"] for c in color_names):
+            base_mood = "energetic"
+        elif any(c in ["blue", "green", "purple"] for c in color_names):
+            base_mood = "calm"
+        elif any(c in ["gray", "black", "white"] for c in color_names):
+            base_mood = "neutral"
+        else:
+            base_mood = "balanced"
+        
+        # Adjust based on object types
+        object_descriptions = [obj.get("type", "").lower() for obj in objects]
+        
+        if any("face" in obj or "person" in obj for obj in object_descriptions):
+            # Check for facial expressions (simplified)
+            if len(objects) > 3:
+                base_mood = "social"
+        
+        return base_mood
+    
+    def _extract_context_hints(self, objects: List[Dict], text_data: Dict) -> List[str]:
+        """Extract context hints from objects and text"""
+        hints = []
+        
+        # Object-based hints
+        object_types = [obj.get("type", "").lower() for obj in objects]
+        
+        if any("computer" in obj or "monitor" in obj for obj in object_types):
+            hints.append("office_environment")
+        
+        if any("car" in obj or "road" in obj for obj in object_types):
+            hints.append("transportation_context")
+        
+        if any("book" in obj or "paper" in obj for obj in object_types):
+            hints.append("educational_setting")
+        
+        # Text-based hints
+        if text_data.get("ocr_status") == "success":
+            text = text_data.get("raw_text", "").lower()
+            
+            if any(word in text for word in ["sale", "price", "$"]):
+                hints.append("commercial_context")
+            
+            if any(word in text for word in ["warning", "danger", "caution"]):
+                hints.append("safety_context")
+            
+            if any(word in text for word in ["menu", "food", "restaurant"]):
+                hints.append("food_service")
+        
+        return hints
+    
+    def _create_structured_summary(self, analyses: Dict) -> Dict:
+        """Create a structured summary of the image"""
+        return {
+            "key_objects": [obj.get("type", "object") for obj in analyses.get("object_detection", {}).get("objects", [])[:5]],
+            "dominant_colors": [color.get("name", "color") for color in analyses.get("color_analysis", {}).get("dominant_colors", [])[:3]],
+            "scene_type": analyses.get("scene_understanding", {}).get("scene_type", "unknown"),
+            "text_presence": analyses.get("text_extraction", {}).get("text_presence", "none"),
+            "structural_complexity": analyses.get("structural_analysis", {}).get("structural_indicators", {}).get("structural_complexity", 0),
+            "aesthetic_score": analyses.get("aesthetic_analysis", {}).get("overall_aesthetic_score", 0)
+        }
+    
+    def _extract_visual_features(self, image_rgb: np.ndarray) -> Dict:
+        """Extract key visual features"""
+        gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
+        
+        # Calculate various visual features
+        return {
+            "edge_density": float(np.sum(cv2.Canny(gray, 50, 150) > 0) / gray.size),
+            "texture_variance": float(np.var(cv2.Laplacian(gray, cv2.CV_64F))),
+            "color_variance": float(np.var(image_rgb, axis=(0, 1)).mean()),
+            "brightness_distribution": np.histogram(gray.ravel(), 8, [0, 256])[0].tolist(),
+            "spatial_frequency": float(np.mean(np.abs(np.fft.fft2(gray))) / 1000)
+        }
+    
+    def _describe_texture_comprehensive(self, analyses: Dict) -> str:
+        """Create comprehensive texture description"""
+        texture = analyses.get("texture_analysis", {})
+        texture_types = texture.get("texture_types", [])
+        
+        if not texture_types:
+            return "mixed textures"
+        
+        primary_texture = texture_types[0]
+        stats = texture.get("statistical_features", {})
+        
+        descriptions = []
+        
+        if stats.get("smoothness", 0) > 0.7:
+            descriptions.append("smooth")
+        elif stats.get("roughness", 0) > 0.7:
+            descriptions.append("rough")
+        
+        if stats.get("contrast", 0) > 100:
+            descriptions.append("high-contrast")
+        
+        if texture.get("granularity", "medium") == "fine":
+            descriptions.append("fine-grained")
+        
+        if descriptions:
+            return f"{primary_texture} with {', '.join(descriptions)} characteristics"
+        else:
+            return primary_texture
+    
+    def _describe_composition(self, analyses: Dict) -> Dict:
+        """Describe image composition"""
+        comp = analyses.get("composition_analysis", {})
+        
+        if not comp:
+            return {"description": "standard composition", "balance": "neutral"}
+        
+        comp_type = comp.get("composition_type", "balanced")
+        balance = comp.get("balance_score", 0.5)
+        
+        descriptions = {
+            "centered": "centered composition with strong focal point",
+            "horizontal_dominant": "horizontal composition with lateral movement",
+            "vertical_dominant": "vertical composition with upward/downward emphasis",
+            "diagonal": "dynamic diagonal composition",
+            "balanced": "well-balanced composition with distributed visual weight"
+        }
+        
+        return {
+            "description": descriptions.get(comp_type, "standard composition"),
+            "balance": "excellent" if balance > 0.8 else "good" if balance > 0.6 else "fair" if balance > 0.4 else "poor",
+            "balance_score": float(balance),
+            "type": comp_type
+        }
+    
+    def _infer_semantic_context(self, analyses: Dict) -> Dict:
+        """Infer semantic context from image features"""
+        scene = analyses.get("scene_understanding", {})
+        objects = analyses.get("object_detection", {}).get("objects", [])
+        text = analyses.get("text_extraction", {}).get("raw_text", "")
+        
+        context = {
+            "environment": scene.get("environment_type", "unknown"),
+            "activity": scene.get("activity_level", "low"),
+            "purpose": "documentation" if len(text) > 50 else "artistic" if analyses.get("aesthetic_analysis", {}).get("overall_aesthetic_score", 0) > 0.7 else "informational",
+            "era_hints": self._infer_era_hints(objects, analyses.get("color_analysis", {})),
+            "cultural_hints": self._infer_cultural_hints(objects, text)
+        }
+        
+        return context
+    
+    def _infer_era_hints(self, objects: List[Dict], color_analysis: Dict) -> List[str]:
+        """Infer era hints from objects and colors"""
+        hints = []
+        
+        # Color-based era hints
+        colors = color_analysis.get("dominant_colors", [])
+        color_names = [color.get("name", "").lower() for color in colors]
+        
+        if any(c in ["sepia", "brown", "beige"] for c in color_names):
+            hints.append("vintage_possible")
+        
+        # Object-based era hints
+        object_types = [obj.get("type", "").lower() for obj in objects]
+        
+        if any("car" in obj_type for obj_type in object_types):
+            # Simplified: assume modern if no other hints
+            hints.append("modern_transportation")
+        
+        if any("computer" in obj_type or "smartphone" in obj_type for obj_type in object_types):
+            hints.append("digital_age")
+        
+        return hints
+    
+    def _infer_cultural_hints(self, objects: List[Dict], text: str) -> List[str]:
+        """Infer cultural hints from objects and text"""
+        hints = []
+        
+        # Text-based cultural hints
+        text_lower = text.lower()
+        
+        if any(word in text_lower for word in ["street", "avenue", "rd", "st"]):
+            hints.append("western_naming")
+        
+        if any(word in text_lower for word in ["寺", "神社", "株式会社"]):  # Japanese characters
+            hints.append("japanese_context")
+        
+        # Object-based cultural hints
+        object_types = [obj.get("type", "").lower() for obj in objects]
+        
+        if any("pagoda" in obj_type or "temple" in obj_type for obj_type in object_types):
+            hints.append("asian_architecture")
+        
+        if any("minaret" in obj_type or "mosque" in obj_type for obj_type in object_types):
+            hints.append("islamic_architecture")
+        
+        return hints
+    
+    def _describe_atmosphere(self, analyses: Dict) -> Dict:
+        """Describe atmosphere and mood"""
+        scene = analyses.get("scene_understanding", {})
+        colors = analyses.get("color_analysis", {})
+        aesthetics = analyses.get("aesthetic_analysis", {})
+        
+        return {
+            "mood": scene.get("mood", "neutral"),
+            "lighting": scene.get("lighting_condition", "moderate"),
+            "time": scene.get("time_of_day", "day"),
+            "temperature": "warm" if colors.get("metrics", {}).get("mean_hue", 0) < 60 else "cool",
+            "clarity": "crisp" if aesthetics.get("sharpness_score", 0) > 0.7 else "soft" if aesthetics.get("sharpness_score", 0) < 0.3 else "clear",
+            "energy": "calm" if colors.get("metrics", {}).get("color_harmony_score", 0) > 0.7 else "energetic" if colors.get("metrics", {}).get("vibrance_score", 0) > 0.7 else "moderate"
+        }
+    
+    def _extract_technical_details(self, analyses: Dict) -> Dict:
+        """Extract technical details"""
+        props = analyses.get("image_properties", {})
+        quality = analyses.get("quality_metrics", {})
+        structure = analyses.get("structural_analysis", {})
+        
+        return {
+            "resolution": f"{props.get('dimensions', {}).get('width', 0)}x{props.get('dimensions', {}).get('height', 0)}",
+            "aspect_ratio": props.get("aspect_ratio", 0),
+            "sharpness": quality.get("sharpness", 0),
+            "noise": quality.get("noise_level", 0),
+            "contrast": quality.get("contrast", 0),
+            "complexity": structure.get("structural_indicators", {}).get("structural_complexity", 0),
+            "symmetry": structure.get("structural_indicators", {}).get("symmetry_score", 0)
+        }
+    
+    def _describe_objects_detailed(self, objects: List[Dict]) -> List[Dict]:
+        """Create detailed descriptions of objects"""
+        detailed_objects = []
+        
+        for obj in objects[:10]:  # Limit to first 10 objects
+            detailed_obj = {
+                "type": obj.get("type", "object"),
+                "category": obj.get("category", "unknown"),
+                "size_category": self._categorize_size(obj.get("relative_size", 0)),
+                "position_category": self._categorize_position(obj.get("center", {})),
+                "shape_characteristics": self._describe_shape_characteristics(obj),
+                "prominence": "primary" if obj.get("relative_size", 0) > 0.1 else "secondary" if obj.get("relative_size", 0) > 0.03 else "background"
+            }
+            
+            # Add confidence indication
+            confidence = obj.get("confidence", 0)
+            if confidence > 0.8:
+                detailed_obj["certainty"] = "high"
+            elif confidence > 0.6:
+                detailed_obj["certainty"] = "medium"
+            else:
+                detailed_obj["certainty"] = "low"
+            
+            detailed_objects.append(detailed_obj)
+        
+        return detailed_objects
+    
+    def _categorize_size(self, relative_size: float) -> str:
+        """Categorize object size"""
+        if relative_size > 0.2:
+            return "dominant"
+        elif relative_size > 0.1:
+            return "large"
+        elif relative_size > 0.05:
+            return "medium"
+        elif relative_size > 0.01:
+            return "small"
+        else:
+            return "tiny"
+    
+    def _categorize_position(self, center: Dict) -> str:
+        """Categorize object position"""
+        x = center.get("x", 0)
+        y = center.get("y", 0)
+        
+        # Assuming image dimensions are known from context
+        # For now, return generic position
+        if x < 0.33:
+            horizontal = "left"
+        elif x < 0.66:
+            horizontal = "center"
+        else:
+            horizontal = "right"
+        
+        if y < 0.33:
+            vertical = "top"
+        elif y < 0.66:
+            vertical = "middle"
+        else:
+            vertical = "bottom"
+        
+        return f"{vertical}_{horizontal}"
+    
+    def _describe_shape_characteristics(self, obj: Dict) -> Dict:
+        """Describe shape characteristics"""
+        return {
+            "circularity": "circular" if obj.get("circularity", 0) > 0.8 else "angular" if obj.get("circularity", 0) < 0.3 else "mixed",
+            "solidity": "solid" if obj.get("solidity", 0) > 0.9 else "fragmented" if obj.get("solidity", 0) < 0.5 else "moderate",
+            "aspect_ratio": "wide" if obj.get("aspect_ratio", 1) > 1.5 else "tall" if obj.get("aspect_ratio", 1) < 0.67 else "balanced"
+        }
+    
+    def _infer_text_role(self, text: str) -> str:
+        """Infer the role of text in the image"""
+        text_lower = text.lower()
+        
+        if len(text) < 20:
+            return "label"
+        
+        if any(word in text_lower for word in ["warning", "danger", "caution", "attention"]):
+            return "warning"
+        
+        if any(word in text_lower for word in ["price", "$", "sale", "discount"]):
+            return "commercial"
+        
+        if any(word in text_lower for word in ["menu", "food", "drink", "restaurant"]):
+            return "menu"
+        
+        if any(word in text_lower for word in ["street", "avenue", "road", "boulevard"]):
+            return "street_sign"
+        
+        if len(text.split()) > 50:
+            return "document"
+        
+        return "informational"
+    
+    # New methods to replace skimage functionality
+    def _compute_image_entropy(self, image: np.ndarray) -> float:
+        """Compute image entropy (replacement for skimage's shannon_entropy)"""
+        # Compute histogram
+        hist, _ = np.histogram(image.ravel(), bins=256, range=(0, 256))
+        hist = hist.astype(float)
+        hist /= hist.sum()  # Normalize to get probabilities
+        
+        # Compute entropy
+        entropy = -np.sum(hist * np.log2(hist + np.finfo(float).eps))
+        return float(entropy)
+    
+    def _compute_lbp_features(self, gray: np.ndarray) -> Dict:
+        """Compute Local Binary Pattern features (simplified)"""
+        # Simple LBP implementation
+        height, width = gray.shape
+        lbp_image = np.zeros_like(gray)
+        
+        for i in range(1, height-1):
+            for j in range(1, width-1):
+                center = gray[i, j]
+                code = 0
+                code |= (gray[i-1, j-1] > center) << 7
+                code |= (gray[i-1, j] > center) << 6
+                code |= (gray[i-1, j+1] > center) << 5
+                code |= (gray[i, j+1] > center) << 4
+                code |= (gray[i+1, j+1] > center) << 3
+                code |= (gray[i+1, j] > center) << 2
+                code |= (gray[i+1, j-1] > center) << 1
+                code |= (gray[i, j-1] > center) << 0
+                lbp_image[i, j] = code
+        
+        # Compute histogram
+        hist, _ = np.histogram(lbp_image.ravel(), bins=256, range=(0, 256))
+        
+        return {
+            "histogram": hist.tolist(),
+            "uniformity": float(np.sum(hist[:10]) / np.sum(hist)) if np.sum(hist) > 0 else 0,
+            "entropy": self._compute_image_entropy(lbp_image)
+        }
+    
+    def _compute_glcm_features(self, gray: np.ndarray) -> Dict:
+        """Compute Gray Level Co-occurrence Matrix features (simplified)"""
+        # Simplified GLCM computation for 1-pixel offset
+        glcm = np.zeros((256, 256), dtype=np.float32)
+        height, width = gray.shape
+        
+        # Create GLCM for horizontal neighbors
+        for i in range(height):
+            for j in range(width-1):
+                a = gray[i, j]
+                b = gray[i, j+1]
+                glcm[a, b] += 1
+        
+        # Normalize
+        if glcm.sum() > 0:
+            glcm /= glcm.sum()
+        
+        # Compute features
+        i, j = np.indices(glcm.shape)
+        
+        # Contrast
+        contrast = np.sum(glcm * (i - j) ** 2)
+        
+        # Energy (uniformity)
+        energy = np.sum(glcm ** 2)
+        
+        # Homogeneity
+        homogeneity = np.sum(glcm / (1 + (i - j) ** 2))
+        
+        # Correlation
+        mean_i = np.sum(i * glcm)
+        mean_j = np.sum(j * glcm)
+        std_i = np.sqrt(np.sum(glcm * (i - mean_i) ** 2))
+        std_j = np.sqrt(np.sum(glcm * (j - mean_j) ** 2))
+        
+        if std_i > 0 and std_j > 0:
+            correlation = np.sum(glcm * (i - mean_i) * (j - mean_j)) / (std_i * std_j)
+        else:
+            correlation = 0
+        
+        return {
+            "contrast": float(contrast),
+            "energy": float(energy),
+            "homogeneity": float(homogeneity),
+            "correlation": float(correlation)
+        }
+    
+    def _compute_gabor_responses_cv2(self, gray: np.ndarray) -> List[float]:
+        """Compute Gabor filter responses using OpenCV"""
+        responses = []
+        ksize = 31  # Kernel size
+        sigma = 5.0
+        lambd = 10.0
+        gamma = 0.5
+        
+        for theta in [0, np.pi/4, np.pi/2, 3*np.pi/4]:
+            kernel = cv2.getGaborKernel((ksize, ksize), sigma, theta, lambd, gamma, 0, ktype=cv2.CV_32F)
+            filtered = cv2.filter2D(gray, cv2.CV_32F, kernel)
+            responses.append(float(np.mean(np.abs(filtered))))
+        
+        return responses
+    
+    def _classify_texture_types(self, gray: np.ndarray) -> List[str]:
+        """Classify texture types based on statistical features"""
+        texture_types = []
+        
+        # Compute basic statistics
+        std_dev = np.std(gray)
+        mean_val = np.mean(gray)
+        
+        # Edge density
+        edges = cv2.Canny(gray, 50, 150)
+        edge_density = np.sum(edges > 0) / edges.size
+        
+        if std_dev < 10:
+            texture_types.append("smooth")
+        elif std_dev > 50:
+            texture_types.append("rough")
+        
+        if edge_density > 0.1:
+            texture_types.append("detailed")
+        
+        # Check for patterns
+        autocorr = cv2.matchTemplate(gray, gray, cv2.TM_CCORR_NORMED).max()
+        if autocorr > 0.8:
+            texture_types.append("regular")
+        elif autocorr < 0.5:
+            texture_types.append("irregular")
+        
+        return texture_types if texture_types else ["medium_textured"]
+    
+    def _estimate_granularity(self, gray: np.ndarray) -> str:
+        """Estimate texture granularity"""
+        # Compute gradient magnitude
+        sobel_x = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+        sobel_y = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+        gradient_magnitude = np.sqrt(sobel_x**2 + sobel_y**2)
+        
+        grad_mean = np.mean(gradient_magnitude)
+        
+        if grad_mean < 10:
+            return "fine"
+        elif grad_mean < 30:
+            return "medium"
+        else:
+            return "coarse"
+    
+    def _compute_texture_gradient(self, gray: np.ndarray) -> Dict:
+        """Compute texture gradient information"""
+        # Compute gradient in multiple directions
+        sobel_x = cv2.Sobel(gray, cv2.CV_64F, 1, 0, ksize=3)
+        sobel_y = cv2.Sobel(gray, cv2.CV_64F, 0, 1, ksize=3)
+        
+        gradient_magnitude = np.sqrt(sobel_x**2 + sobel_y**2)
+        gradient_direction = np.arctan2(sobel_y, sobel_x)
+        
+        return {
+            "gradient_magnitude_mean": float(np.mean(gradient_magnitude)),
+            "gradient_magnitude_std": float(np.std(gradient_magnitude)),
+            "gradient_direction_std": float(np.std(gradient_direction))
+        }
+    
+    def _analyze_fractal_dimensions(self, gray: np.ndarray) -> Dict:
+        """Analyze fractal dimensions (simplified)"""
+        # Simplified box-counting method
+        sizes = [2, 4, 8, 16, 32]
+        counts = []
+        
+        for size in sizes:
+            # Downsample image
+            h, w = gray.shape
+            h_new = h // size
+            w_new = w // size
+            if h_new == 0 or w_new == 0:
+                continue
+                
+            resized = cv2.resize(gray[:h_new*size, :w_new*size], (w_new, h_new))
+            
+            # Count boxes with content
+            threshold = np.mean(resized)
+            count = np.sum(resized > threshold)
+            counts.append(count)
+        
+        # Simple linear regression for fractal dimension
+        if len(sizes) == len(counts) and len(counts) > 1:
+            log_sizes = np.log(sizes[:len(counts)])
+            log_counts = np.log(counts)
+            if not np.any(np.isnan(log_counts)) and not np.any(np.isinf(log_counts)):
+                coeff = np.polyfit(log_sizes, log_counts, 1)
+                fractal_dim = -coeff[0]
+            else:
+                fractal_dim = 0
+        else:
+            fractal_dim = 0
+        
+        return {
+            "fractal_dimension": float(fractal_dim),
+            "complexity": "high" if fractal_dim > 2.2 else "medium" if fractal_dim > 1.8 else "low"
+        }
+    
+    def _analyze_color_distribution(self, image_rgb: np.ndarray) -> Dict:
+        """Analyze color distribution across the image"""
+        height, width, _ = image_rgb.shape
+        
+        # Divide into regions
+        regions = []
+        for i in range(3):
+            for j in range(3):
+                h_start = i * height // 3
+                h_end = (i + 1) * height // 3
+                w_start = j * width // 3
+                w_end = (j + 1) * width // 3
+                
+                region = image_rgb[h_start:h_end, w_start:w_end]
+                mean_color = np.mean(region, axis=(0, 1))
+                
+                regions.append({
+                    "region": f"{i},{j}",
+                    "mean_rgb": mean_color.tolist(),
+                    "color_name": self._get_color_name(mean_color.astype(int))
+                })
+        
+        return {
+            "regional_colors": regions,
+            "color_variation": float(np.std([r["mean_rgb"] for r in regions], axis=0).mean())
+        }
+    
+    def _identify_color_zones(self, image_rgb: np.ndarray) -> List[Dict]:
+        """Identify distinct color zones in the image"""
+        # Simple k-means segmentation for color zones
+        pixels = image_rgb.reshape(-1, 3)
+        sample_size = min(5000, len(pixels))
+        sample = pixels[np.random.choice(len(pixels), sample_size, replace=False)]
+        
+        n_zones = min(5, len(np.unique(sample, axis=0)))
+        if n_zones > 1:
+            kmeans = KMeans(n_clusters=n_zones, random_state=42, n_init=10)
+            kmeans.fit(sample)
+            zone_colors = kmeans.cluster_centers_.astype(int)
+            zone_sizes = np.bincount(kmeans.labels_)
+        else:
+            zone_colors = [np.mean(sample, axis=0).astype(int)]
+            zone_sizes = [len(sample)]
+        
+        zones = []
+        for color, size in zip(zone_colors, zone_sizes):
+            zones.append({
+                "color_rgb": color.tolist(),
+                "color_name": self._get_color_name(color),
+                "relative_size": float(size / sample_size),
+                "hex": f"#{color[0]:02x}{color[1]:02x}{color[2]:02x}"
+            })
+        
+        return zones
+    
+    def _analyze_color_gradients(self, image_rgb: np.ndarray) -> Dict:
+        """Analyze color gradients in the image"""
+        # Convert to LAB color space for better gradient analysis
+        lab = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2LAB)
+        
+        # Compute gradients for each channel
+        gradients = []
+        for i in range(3):
+            channel = lab[:,:,i].astype(np.float32)
+            grad_x = cv2.Sobel(channel, cv2.CV_64F, 1, 0, ksize=3)
+            grad_y = cv2.Sobel(channel, cv2.CV_64F, 0, 1, ksize=3)
+            magnitude = np.sqrt(grad_x**2 + grad_y**2)
+            gradients.append(float(np.mean(magnitude)))
+        
+        return {
+            "l_gradient": gradients[0],
+            "a_gradient": gradients[1],
+            "b_gradient": gradients[2],
+            "overall_gradient": np.mean(gradients),
+            "gradient_strength": "strong" if np.mean(gradients) > 20 else "medium" if np.mean(gradients) > 10 else "weak"
+        }
+    
+    def _analyze_color_transitions(self, image_rgb: np.ndarray) -> Dict:
+        """Analyze color transitions in the image"""
+        hsv = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2HSV)
+        hue = hsv[:,:,0]
+        
+        # Compute hue differences
+        hue_diff_horizontal = np.abs(np.diff(hue, axis=1))
+        hue_diff_vertical = np.abs(np.diff(hue, axis=0))
+        
+        # Count significant transitions
+        threshold = 10  # Hue difference threshold
+        transitions_h = np.sum(hue_diff_horizontal > threshold)
+        transitions_v = np.sum(hue_diff_vertical > threshold)
+        
+        total_pixels = hue.size
+        transition_density = (transitions_h + transitions_v) / total_pixels
+        
+        return {
+            "horizontal_transitions": int(transitions_h),
+            "vertical_transitions": int(transitions_v),
+            "transition_density": float(transition_density),
+            "transition_character": "sharp" if transition_density > 0.1 else "gradual" if transition_density < 0.01 else "moderate"
+        }
+    
+    def _assess_shape_regularity(self, gray: np.ndarray) -> float:
+        """Assess shape regularity in the image"""
+        edges = cv2.Canny(gray, 50, 150)
+        contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        if not contours:
+            return 0.5
+        
+        regularity_scores = []
+        for contour in contours[:10]:  # Analyze first 10 contours
+            area = cv2.contourArea(contour)
+            perimeter = cv2.arcLength(contour, True)
+            
+            if perimeter > 0:
+                circularity = 4 * np.pi * area / (perimeter ** 2)
+                # Circularity close to 1 indicates regular shape
+                regularity = 1.0 - abs(circularity - 1.0)
+                regularity_scores.append(regularity)
+        
+        return float(np.mean(regularity_scores)) if regularity_scores else 0.5
+    
+    def _analyze_lines(self, lines: np.ndarray) -> Dict:
+        """Analyze line characteristics"""
+        angles = []
+        lengths = []
+        
+        for line in lines:
+            x1, y1, x2, y2 = line[0]
+            angle = np.arctan2(y2 - y1, x2 - x1) * 180 / np.pi
+            length = np.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+            angles.append(angle)
+            lengths.append(length)
+        
+        if angles:
+            angles_array = np.array(angles)
+            # Normalize angles to 0-180 range
+            angles_array = angles_array % 180
+            
+            # Classify line orientations
+            horizontal = np.sum((angles_array < 15) | (angles_array > 165))
+            vertical = np.sum((angles_array > 75) & (angles_array < 105))
+            diagonal = len(angles) - horizontal - vertical
+            
+            return {
+                "total_lines": len(lines),
+                "horizontal_lines": int(horizontal),
+                "vertical_lines": int(vertical),
+                "diagonal_lines": int(diagonal),
+                "mean_length": float(np.mean(lengths)) if lengths else 0,
+                "length_std": float(np.std(lengths)) if lengths else 0,
+                "dominant_orientation": "horizontal" if horizontal > vertical and horizontal > diagonal else 
+                                       "vertical" if vertical > horizontal and vertical > diagonal else "diagonal"
+            }
+        
+        return {"total_lines": 0, "dominant_orientation": "none"}
+    
+    def _analyze_corner_distribution(self, corners: np.ndarray) -> Dict:
+        """Analyze corner distribution"""
+        corners = corners.reshape(-1, 2)
+        
+        if len(corners) == 0:
+            return {"corner_count": 0, "distribution": "uniform"}
+        
+        # Divide image into quadrants
+        height, width = 100, 100  # Normalized dimensions
+        corners_normalized = corners / np.array([[width, height]])
+        
+        quadrant_counts = [0, 0, 0, 0]  # TL, TR, BL, BR
+        
+        for x, y in corners_normalized:
+            if x < 0.5 and y < 0.5:
+                quadrant_counts[0] += 1
+            elif x >= 0.5 and y < 0.5:
+                quadrant_counts[1] += 1
+            elif x < 0.5 and y >= 0.5:
+                quadrant_counts[2] += 1
+            else:
+                quadrant_counts[3] += 1
+        
+        total_corners = len(corners)
+        quadrant_percentages = [count / total_corners for count in quadrant_counts]
+        
+        # Determine distribution type
+        max_diff = max(quadrant_percentages) - min(quadrant_percentages)
+        if max_diff < 0.1:
+            distribution = "uniform"
+        elif max(quadrant_percentages) > 0.5:
+            distribution = "clustered"
+        else:
+            distribution = "balanced"
+        
+        return {
+            "corner_count": len(corners),
+            "quadrant_distribution": quadrant_percentages,
+            "distribution_type": distribution,
+            "density": len(corners) / (width * height) * 10000
+        }
+    
+    def _detect_color_based_objects(self, hsv: np.ndarray) -> List[Dict]:
+        """Detect objects based on color segmentation"""
+        objects = []
+        
+        # Define color ranges for common objects (simplified)
+        color_ranges = [
+            # Red objects
+            {"name": "red_object", "lower": (0, 100, 100), "upper": (10, 255, 255), "category": "colored"},
+            # Green objects
+            {"name": "green_object", "lower": (35, 100, 100), "upper": (85, 255, 255), "category": "colored"},
+            # Blue objects
+            {"name": "blue_object", "lower": (90, 100, 100), "upper": (130, 255, 255), "category": "colored"},
+        ]
+        
+        for color_range in color_ranges:
+            mask = cv2.inRange(hsv, color_range["lower"], color_range["upper"])
+            
+            # Find contours in the mask
+            contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            
+            for contour in contours[:5]:  # Limit to 5 objects per color
+                area = cv2.contourArea(contour)
+                if area > 500:  # Minimum area
+                    x, y, w, h = cv2.boundingRect(contour)
+                    
+                    objects.append({
+                        "type": color_range["name"],
+                        "category": color_range["category"],
+                        "confidence": 0.6,
+                        "bounding_box": {"x": int(x), "y": int(y), "width": int(w), "height": int(h)},
+                        "center": {"x": int(x + w/2), "y": int(y + h/2)},
+                        "area": int(area),
+                        "color_based": True
+                    })
+        
+        return objects
+
+
+# Utility function for quick encoding
+def encode_image_for_llm(
+    image_path: str,
+    detail_level: str = "RESEARCH",
+    api_key: str = "K85328613788957"
+) -> str:
+    """
+    Quick utility function to encode an image for LLM consumption.
+    
+    Args:
+        image_path: Path to the image
+        detail_level: Level of detail (MINIMAL, STANDARD, DETAILED, EXTREME, RESEARCH)
+        api_key: OCR.Space API key
+    
+    Returns:
+        JSON string with comprehensive image encoding
+    """
+    encoder = AdvancedImageToTextEncoder(ocr_api_key=api_key)
+    
+    try:
+        detail_enum = DetailLevel[detail_level.upper()]
+    except KeyError:
+        detail_enum = DetailLevel.RESEARCH
+    
+    result = encoder.encode_image_to_detailed_text(
+        image_path=image_path,
+        detail_level=detail_enum,
+        include_visual_features=True,
+        structured_output=True
+    )
+    
+    return json.dumps(result, indent=2, default=str)
+
+
+def vlm():
+    sample_image_path = input("Enter image path: ")
+    
+    encoder = AdvancedImageToTextEncoder()
+    try:
+        # Get detailed encoding
+        encoding = encoder.encode_image_to_detailed_text(
+            image_path=sample_image_path,
+            detail_level=DetailLevel.RESEARCH
+        )
+        
+        vlm_response = groq_call("", encoder)
+        print(vlm_response)
+        
+    except Exception as e:
+        print(f"Error processing image: {e}")
+
+def live_screen():
+    screen = pyautogui.screenshot()
+    screen.save(r"D:/Optimind_AI/screen.png")
+    image_path = r"D:/Optimind_AI/screen.png"
+    
+    encoder = AdvancedImageToTextEncoder()
+    try:
+        # Get detailed encoding
+        encoding_ls = encoder.encode_image_to_detailed_text(
+            image_path=image_path,
+            detail_level=DetailLevel.RESEARCH
+        )
+        ocr_text = ocr(image_path)
+        screen_description = groq_call(f"OCR: {ocr_text}, Image Analysis: {encoding_ls}. From this description, describe the current user screen or desktop, do not mention about this, just return the response about this description", "")
+        print(screen_description)
+        
+    except Exception as e:
+        print(f"Error processing image: {e}")

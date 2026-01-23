@@ -1,0 +1,108 @@
+import os
+import sys
+import sqlite3
+import hashlib
+import getpass
+import ctypes
+import time
+
+DB_FILE = "D:\\Optimind_AI\\security-db\\sys_guard.db"
+TABLE_NAME = "auth"
+MAX_TRIES = 3
+
+# ------------------ ADMIN CHECK ------------------
+
+def is_admin():
+    try:
+        return ctypes.windll.shell32.IsUserAnAdmin()
+    except:
+        return False
+
+if not is_admin():
+    ctypes.windll.shell32.ShellExecuteW(
+        None, "runas", sys.executable, " ".join(sys.argv), None, 1
+    )
+    sys.exit(0)
+
+# ------------------ HASH ------------------
+
+def sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+# ------------------ DB ------------------
+
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute(f"""
+        CREATE TABLE IF NOT EXISTS {TABLE_NAME} (
+            id INTEGER PRIMARY KEY,
+            passhash TEXT NOT NULL
+        )
+    """)
+    conn.commit()
+    return conn, c
+
+# ------------------ FAIL SAFE ------------------
+
+def lock_system():
+    print("ACCESS DENIED")
+    time.sleep(3)
+    sys.exit(1)
+
+# ------------------ PASSWORD SETUP ------------------
+
+def setup_password(c, conn):
+    print("🔐 Set a system password (one-time)")
+    while True:
+        p1 = getpass.getpass("New password: ")
+        p2 = getpass.getpass("Confirm password: ")
+
+        if p1 != p2:
+            print("❌ Passwords do not match")
+            continue
+        if len(p1) < 6:
+            print("❌ Password too short")
+            continue
+        break
+
+    h = sha256(p1)
+    c.execute(f"INSERT INTO {TABLE_NAME} (passhash) VALUES (?)", (h,))
+    conn.commit()
+    print("✅ Password set")
+
+# ------------------ VERIFY ------------------
+
+def verify_password(c):
+    for attempt in range(MAX_TRIES):
+        pwd = getpass.getpass("🔑 Enter password: ")
+        h = sha256(pwd)
+
+        c.execute(f"SELECT passhash FROM {TABLE_NAME} LIMIT 1")
+        stored = c.fetchone()
+
+        if not stored:
+            return False
+
+        if h == stored[0]:
+            return True
+
+        print("❌ Wrong password")
+
+    return False
+
+# ------------------ GUARD ------------------
+
+def run_password_guard():
+    conn, c = init_db()
+
+    c.execute(f"SELECT COUNT(*) FROM {TABLE_NAME}")
+    exists = c.fetchone()[0]
+
+    if exists == 0:
+        setup_password(c, conn)
+    else:
+        if not verify_password(c):
+            lock_system()
+
+    conn.close()

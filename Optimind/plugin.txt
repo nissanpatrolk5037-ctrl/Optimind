@@ -1,0 +1,472 @@
+"""
+Plugin System for Optimind AI
+Dynamically loads Python files from a plugins folder and integrates their functionality.
+"""
+import importlib.util
+import inspect
+from pathlib import Path
+from typing import Dict, List, Any, Callable, Optional
+import sys
+import traceback
+
+class PluginManager:
+    """Manages dynamic loading and execution of plugins"""
+    
+    def __init__(self, plugins_folder: str = "plugins"):
+        """
+        Initialize the plugin manager.
+        
+        Args:
+            plugins_folder: Path to the plugins directory
+        """
+        self.plugins_folder = Path(plugins_folder)
+        self.plugins: Dict[str, Dict[str, Any]] = {}
+        self.triggers_map: Dict[str, List[str]] = {}
+        self.plugin_functions: Dict[str, Callable] = {}
+        
+        # Create plugins folder if it doesn't exist
+        self.plugins_folder.mkdir(exist_ok=True)
+        
+        # Create a sample plugin if folder is empty
+        self._create_sample_plugin()
+    
+    def _create_sample_plugin(self) -> None:
+        """Create a sample plugin file to demonstrate the plugin system"""
+        sample_plugin = self.plugins_folder / "sample_weather_plugin.py"
+        
+        if not sample_plugin.exists():
+            sample_code = '''
+"""
+Sample Weather Plugin for Optimind AI
+Demonstrates how to create custom plugins.
+"""
+
+# Required: Define triggers that will activate this plugin
+PLUGIN_TRIGGERS = [
+    "weather forecast",
+    "what's the weather",
+    "temperature today",
+    "check weather",
+    "is it raining",
+    "humidity level"
+]
+
+# Optional: Define plugin metadata
+PLUGIN_METADATA = {
+    "name": "Weather Plugin",
+    "version": "1.0.0",
+    "author": "Optimind AI",
+    "description": "Provides weather information and forecasts",
+    "category": "Information"
+}
+
+def PLUGIN_FUNCTION(text: str, speak: Callable) -> str:
+    """
+    Main plugin function that gets called when trigger is detected.
+    
+    Args:
+        text: The user's spoken/text input
+        speak: Function to speak responses
+        
+    Returns:
+        Response string (optional)
+    """
+    import requests
+    from datetime import datetime
+    
+    # Extract location from text (simple example)
+    location = "New York"  # Default location
+    
+    # Try to extract location from text
+    import re
+    location_match = re.search(r'in\s+([A-Za-z\s]+)', text, re.IGNORECASE)
+    if location_match:
+        location = location_match.group(1)
+    
+    try:
+        # Get weather data from a free API
+        # Note: In production, you'd use a proper API key
+        response = requests.get(
+            f"https://wttr.in/{location}?format=%C+%t+%h+%w",
+            timeout=5
+        )
+        
+        if response.status_code == 200:
+            weather_data = response.text.split()
+            if len(weather_data) >= 4:
+                condition = weather_data[0]
+                temperature = weather_data[1]
+                humidity = weather_data[2]
+                wind = weather_data[3]
+                
+                message = f"Weather in {location}: {condition}, {temperature}, Humidity: {humidity}, Wind: {wind}"
+                speak(message)
+                return message
+            else:
+                message = f"I fetched weather data for {location}, but the format seems different."
+                speak(message)
+                return message
+        else:
+            message = f"Sorry, I couldn't fetch weather data for {location} right now."
+            speak(message)
+            return message
+            
+    except Exception as e:
+        message = f"Sorry, I encountered an error getting weather information: {str(e)}"
+        speak(message)
+        return message
+
+# Optional: Setup function (called when plugin is loaded)
+def PLUGIN_SETUP():
+    """Optional setup function that runs when plugin is loaded"""
+    print(f"🌤️ Weather Plugin v{PLUGIN_METADATA['version']} loaded successfully!")
+    return True
+
+# Optional: Teardown function (called when plugin is unloaded)
+def PLUGIN_TEARDOWN():
+    """Optional teardown function that runs when plugin is unloaded"""
+    print("Weather Plugin unloaded")
+'''
+            sample_plugin.write_text(sample_code)
+            print(f"📁 Created sample plugin: {sample_plugin.name}")
+    
+    def load_all_plugins(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Load all plugins from the plugins folder.
+        
+        Returns:
+            Dictionary of loaded plugins
+        """
+        print(f"\n🔌 Loading plugins from: {self.plugins_folder}")
+        
+        # Clear previous plugins
+        self.plugins.clear()
+        self.triggers_map.clear()
+        self.plugin_functions.clear()
+        
+        # Find all .py files in plugins folder
+        plugin_files = list(self.plugins_folder.glob("*.py"))
+        
+        if not plugin_files:
+            print("📭 No plugins found in plugins folder")
+            return self.plugins
+        
+        loaded_count = 0
+        for plugin_file in plugin_files:
+            # Skip __init__.py and files starting with _
+            if plugin_file.name.startswith("_") or plugin_file.name == "__init__.py":
+                continue
+            
+            plugin_name = plugin_file.stem
+            plugin_data = self._load_single_plugin(plugin_file, plugin_name)
+            
+            if plugin_data:
+                self.plugins[plugin_name] = plugin_data
+                loaded_count += 1
+        
+        print(f"✅ Loaded {loaded_count}/{len(plugin_files)} plugins")
+        return self.plugins
+    
+    def _load_single_plugin(self, plugin_file: Path, plugin_name: str) -> Optional[Dict[str, Any]]:
+        """
+        Load a single plugin file.
+        
+        Args:
+            plugin_file: Path to the plugin file
+            plugin_name: Name of the plugin
+            
+        Returns:
+            Plugin data dictionary or None if failed
+        """
+        try:
+            # Create module spec
+            spec = importlib.util.spec_from_file_location(plugin_name, plugin_file)
+            if spec is None:
+                print(f"❌ Failed to create spec for {plugin_name}")
+                return None
+            
+            # Create module
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[plugin_name] = module
+            
+            # Execute module
+            spec.loader.exec_module(module)
+            
+            # Check for required components
+            if not hasattr(module, 'PLUGIN_TRIGGERS'):
+                print(f"❌ Plugin {plugin_name} missing PLUGIN_TRIGGERS")
+                return None
+            
+            if not hasattr(module, 'PLUGIN_FUNCTION'):
+                print(f"❌ Plugin {plugin_name} missing PLUGIN_FUNCTION")
+                return None
+            
+            # Get plugin data
+            triggers = getattr(module, 'PLUGIN_TRIGGERS', [])
+            plugin_function = getattr(module, 'PLUGIN_FUNCTION')
+            metadata = getattr(module, 'PLUGIN_METADATA', {})
+            setup_func = getattr(module, 'PLUGIN_SETUP', None)
+            teardown_func = getattr(module, 'PLUGIN_TEARDOWN', None)
+            
+            # Validate triggers
+            if not isinstance(triggers, list) or not triggers:
+                print(f"❌ Plugin {plugin_name} has invalid triggers")
+                return None
+            
+            # Validate function
+            if not callable(plugin_function):
+                print(f"❌ Plugin {plugin_name} has invalid PLUGIN_FUNCTION")
+                return None
+            
+            # Add to triggers map
+            for trigger in triggers:
+                trigger_lower = trigger.lower()
+                if trigger_lower not in self.triggers_map:
+                    self.triggers_map[trigger_lower] = []
+                self.triggers_map[trigger_lower].append(plugin_name)
+            
+            # Store plugin function
+            self.plugin_functions[plugin_name] = plugin_function
+            
+            # Run setup function if exists
+            if setup_func and callable(setup_func):
+                try:
+                    setup_success = setup_func()
+                    if setup_success is not False:
+                        print(f"   ✅ {plugin_name} setup completed")
+                except Exception as e:
+                    print(f"   ⚠️ {plugin_name} setup failed: {e}")
+            
+            # Prepare plugin data
+            plugin_data = {
+                'name': metadata.get('name', plugin_name),
+                'version': metadata.get('version', '1.0.0'),
+                'author': metadata.get('author', 'Unknown'),
+                'description': metadata.get('description', 'No description'),
+                'category': metadata.get('category', 'General'),
+                'triggers': triggers,
+                'file': str(plugin_file),
+                'loaded': True,
+                'teardown_func': teardown_func
+            }
+            
+            print(f"   ✅ {plugin_name} v{plugin_data['version']} - {plugin_data['description']}")
+            print(f"      Triggers: {', '.join(triggers[:3])}{'...' if len(triggers) > 3 else ''}")
+            
+            return plugin_data
+            
+        except Exception as e:
+            print(f"❌ Error loading plugin {plugin_name}: {e}")
+            traceback.print_exc()
+            return None
+    
+    def check_triggers(self, text: str) -> Optional[Dict[str, Any]]:
+        """
+        Check if text contains any plugin triggers.
+        
+        Args:
+            text: User input text
+            
+        Returns:
+            Plugin info if triggered, None otherwise
+        """
+        text_lower = text.lower()
+        
+        # Check for exact triggers first
+        for trigger, plugin_names in self.triggers_map.items():
+            if trigger in text_lower:
+                # Return first matching plugin
+                plugin_name = plugin_names[0]
+                if plugin_name in self.plugins:
+                    return {
+                        'plugin_name': plugin_name,
+                        'trigger': trigger,
+                        'plugin_data': self.plugins[plugin_name],
+                        'function': self.plugin_functions[plugin_name]
+                    }
+        
+        # Check for partial matches (words in triggers)
+        words = text_lower.split()
+        for word in words:
+            if word in self.triggers_map:
+                plugin_name = self.triggers_map[word][0]
+                if plugin_name in self.plugins:
+                    return {
+                        'plugin_name': plugin_name,
+                        'trigger': word,
+                        'plugin_data': self.plugins[plugin_name],
+                        'function': self.plugin_functions[plugin_name]
+                    }
+        
+        return None
+    
+    def execute_plugin(self, plugin_name: str, text: str, speak: Callable) -> Any:
+        """
+        Execute a plugin's main function.
+        
+        Args:
+            plugin_name: Name of the plugin to execute
+            text: User input text
+            speak: Speak function for audio output
+            
+        Returns:
+            Result from plugin function
+        """
+        if plugin_name not in self.plugin_functions:
+            print(f"❌ Plugin {plugin_name} not found or not loaded")
+            return None
+        
+        try:
+            plugin_func = self.plugin_functions[plugin_name]
+            print(f"🔌 Executing plugin: {plugin_name}")
+            
+            # Call plugin function with text and speak function
+            result = plugin_func(text, speak)
+            return result
+            
+        except Exception as e:
+            print(f"❌ Error executing plugin {plugin_name}: {e}")
+            traceback.print_exc()
+            return None
+    
+    def get_plugin_list(self) -> List[Dict[str, Any]]:
+        """
+        Get list of all loaded plugins.
+        
+        Returns:
+            List of plugin information dictionaries
+        """
+        return [
+            {
+                'name': data['name'],
+                'version': data['version'],
+                'author': data['author'],
+                'description': data['description'],
+                'triggers': data['triggers'],
+                'category': data['category']
+            }
+            for data in self.plugins.values()
+        ]
+    
+    def unload_plugin(self, plugin_name: str) -> bool:
+        """
+        Unload a specific plugin.
+        
+        Args:
+            plugin_name: Name of plugin to unload
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        if plugin_name not in self.plugins:
+            return False
+        
+        try:
+            # Run teardown function if exists
+            plugin_data = self.plugins[plugin_name]
+            teardown_func = plugin_data.get('teardown_func')
+            if teardown_func and callable(teardown_func):
+                teardown_func()
+            
+            # Remove from triggers map
+            triggers = plugin_data['triggers']
+            for trigger in triggers:
+                trigger_lower = trigger.lower()
+                if trigger_lower in self.triggers_map:
+                    if plugin_name in self.triggers_map[trigger_lower]:
+                        self.triggers_map[trigger_lower].remove(plugin_name)
+                        if not self.triggers_map[trigger_lower]:
+                            del self.triggers_map[trigger_lower]
+            
+            # Remove from function map
+            if plugin_name in self.plugin_functions:
+                del self.plugin_functions[plugin_name]
+            
+            # Remove from plugins
+            del self.plugins[plugin_name]
+            
+            print(f"📤 Unloaded plugin: {plugin_name}")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Error unloading plugin {plugin_name}: {e}")
+            return False
+    
+    def unload_all_plugins(self) -> None:
+        """Unload all plugins."""
+        plugin_names = list(self.plugins.keys())
+        for plugin_name in plugin_names:
+            self.unload_plugin(plugin_name)
+    
+    def reload_plugins(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Reload all plugins.
+        
+        Returns:
+            Dictionary of reloaded plugins
+        """
+        self.unload_all_plugins()
+        return self.load_all_plugins()
+
+# Global plugin manager instance
+plugin_manager = PluginManager()
+
+# For backward compatibility
+def load_plugins(plugin_folder: str = "plugins") -> PluginManager:
+    """
+    Load plugins from specified folder.
+    
+    Args:
+        plugin_folder: Path to plugins folder
+        
+    Returns:
+        PluginManager instance
+    """
+    global plugin_manager
+    plugin_manager = PluginManager(plugin_folder)
+    plugin_manager.load_all_plugins()
+    return plugin_manager
+
+def check_plugin_triggers(text: str) -> Optional[Dict[str, Any]]:
+    """
+    Check if text triggers any plugin.
+    
+    Args:
+        text: User input text
+        
+    Returns:
+        Plugin info if triggered, None otherwise
+    """
+    return plugin_manager.check_triggers(text)
+
+def execute_plugin_function(plugin_name: str, text: str, speak: Callable) -> Any:
+    """
+    Execute a plugin's main function.
+    
+    Args:
+        plugin_name: Name of plugin to execute
+        text: User input text
+        speak: Speak function for audio output
+        
+    Returns:
+        Result from plugin function
+    """
+    return plugin_manager.execute_plugin(plugin_name, text, speak)
+
+def get_loaded_plugins() -> List[Dict[str, Any]]:
+    """
+    Get list of all loaded plugins.
+    
+    Returns:
+        List of plugin information
+    """
+    return plugin_manager.get_plugin_list()
+
+def reload_all_plugins() -> Dict[str, Dict[str, Any]]:
+    """
+    Reload all plugins.
+    
+    Returns:
+        Dictionary of loaded plugins
+    """
+    return plugin_manager.reload_plugins()
