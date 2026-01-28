@@ -93,60 +93,38 @@ flowchart LR
 ## 🧠 System Architecture
 
 ```mermaid
-graph TB
-    A[User Input] --> B{Input Type}
-    B --> C[Voice]
-    B --> D[Text]
-    B --> E[Image]
-    B --> F[Trigger]
+flowchart TB
+    User((Human)) --> Interface
+    Interface --> STT[Whisper · Adaptive]
+    Interface --> Vision[Camera · Screen]
+    STT --> Brain[Smart Parser]
+    Vision --> Brain
+    Brain -->|Local| LocalLLMs[DeepSeek/Gemma]
+    Brain -->|Fast| Groq[LLaMA 70B]
     
-    C --> G[Whisper STT]
-    D --> H[Text Parser]
-    E --> I[Vision Processing]
-    F --> J[Trigger Detection]
-    
-    G --> K[Transcribed Text]
-    H --> K
-    I --> L[Computer Vision Results]
-    J --> M[API Integration]
-    
-    K --> N{Task Type}
-    N --> O[Conversation]
-    N --> P[Automation]
-    N --> Q[Plugin]
-    
-    O --> R[Groq/LLM]
-    P --> S[Code Generation]
-    Q --> T[Plugin Execution]
-    
-    R --> U[Response]
-    S --> V[Code Execution]
-    T --> W[Plugin Output]
-    
-    U --> X[Output]
-    V --> X
-    W --> X
-    
-    X --> Y[User]
-    
-    subgraph "Core Engine"
-        G
-        H
-        I
-        J
-        N
+    subgraph "Plugin Ecosystem"
+        P1[Media Plugins]
+        P2[API Plugins]
+        P3[Utility Plugins]
+        P4[Custom Plugins]
     end
     
-    subgraph "Processing Modules"
-        R
-        S
-        T
-    end
+    LocalLLMs --> Memory[JSON Memory]
+    Groq --> Memory
+    Memory --> Decision[Task Router]
     
-    subgraph "External Services"
-        M
-        L
-    end
+    Decision -->|Automation| Code[Auto‑Coder]
+    Decision -->|Plugin| PluginSystem
+    Decision -->|API| API[API Gateway]
+    Decision -->|Chat| Response
+    
+    Code --> Output[Execution]
+    PluginSystem --> Output
+    API --> Output
+    Response --> TTS[Typecast Voice]
+    Response --> Media[Media Engine]
+    
+    Output --> Media
 ```
 
 ---
@@ -176,6 +154,78 @@ Automatic routing based on task & connectivity.
 
 ---
 
+## 🎤 Voice Recognition System
+
+### 🎯 Adaptive Model Selection
+```mermaid
+graph LR
+    A[Audio Input] --> B{Duration Analysis}
+    B -->|0-5s| C[Tiny Model]
+    B -->|6-10s| D[Small Model]
+    B -->|11-20s| E[Base Model]
+    B -->|21-40s| F[Medium Model]
+    B -->|41s+| G[Large Model]
+    
+    C --> H[Transcription]
+    D --> H
+    E --> H
+    F --> H
+    G --> H
+    
+    H --> I[Text Output]
+```
+
+### ⚙️ Configuration Parameters
+
+```python
+# Audio processing settings
+SAMPLERATE = 16000          # 16kHz sampling rate
+CHANNELS = 1                # Mono audio
+VOICE_THRESHOLD = 0.015     # Voice detection sensitivity
+SILENCE_SECONDS = 1.8       # End-of-speech detection
+MIN_SPEECH_SECONDS = 0.5    # Minimum speech duration
+```
+
+### 📈 Performance Metrics
+
+
+```mermaid
+graph TD
+    subgraph "Performance Matrix"
+        A1[Tiny<br/>RAM: 1GB<br/>Speed: ⚡⚡⚡⚡⚡<br/>Accuracy: 85%]
+        A2[Small<br/>RAM: 2GB<br/>Speed: ⚡⚡⚡⚡⚡<br/>Accuracy: 88%]
+        A3[Base<br/>RAM: 3GB<br/>Speed: ⚡⚡⚡<br/>Accuracy: 91%]
+        A4[Medium<br/>RAM: 5GB<br/>Speed: ⚡⚡<br/>Accuracy: 94%]
+        A5[Large<br/>RAM: 8GB+<br/>Speed: ⚡<br/>Accuracy: 97%]
+    end
+    
+    subgraph "Best For"
+        B1[Short commands<br/><5 seconds]
+        B2[Quick questions<br/>6-10 seconds]
+        B3[Normal conversation<br/>11-20 seconds]
+        B4[Detailed queries<br/>21-40 seconds]
+        B5[Complex audio<br/>41+ seconds]
+    end
+    
+    A1 --> B1
+    A2 --> B2
+    A3 --> B3
+    A4 --> B4
+    A5 --> B5
+    
+    style A1 fill:#e1f5e1
+    style A2 fill:#d4edda
+    style A3 fill:#c3e6cb
+    style A4 fill:#b7dfc5
+    style A5 fill:#a8d5ba
+    style B1 fill:#f8f9fa
+    style B2 fill:#f8f9fa
+    style B3 fill:#f8f9fa
+    style B4 fill:#f8f9fa
+    style B5 fill:#f8f9fa
+```
+
+---
 ## 🔌 Plugin Architecture
 
 * Metadata-based plugins
