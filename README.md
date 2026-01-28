@@ -180,32 +180,8 @@ sequenceDiagram
 * Content filtering
 * Local-first data storage
 
----
-
-## 🚀 Running the System
-
-### Prerequisites
-
-```bash
-python --version  # Python 3.8+
-```
-
-### Installation
-
-```bash
-git clone https://github.com/yourusername/optimind.git
-cd optimind
-pip install -r requirements.txt
-```
-
-### Execution
-
-```bash
-python main.py
-```
 
 ---
-
 ## 🏗️ Project Structure
 
 ```text
@@ -217,8 +193,25 @@ optimind/
 ├── api_integrations.py
 ├── speak.py
 ├── clap.py
+├── age.py
+├── pwd_guard.py
+├── conversation_memory.json
+├── live_camera.py
+├── live_screen.py
+├── melody.py
+├── triggers.py
+├── local_llm_exec.py
 ├── requirements.txt
+├── security_db
+|   ├── age_guard.db
+|   ├── sys_guard.db
+├── whisper-cpp
+|   ├── whisper-cpp-downloads
 └── plugins/
+    ├── calculator_plugin.py
+    ├── joke_plugin.py
+    ├── sample_weather_plugin.py
+
 ```
 
 ---
@@ -250,7 +243,7 @@ def plugin_function(text, speak):
 
 ## 📄 License
 
-MIT License
+Custom License
 
 ---
 
