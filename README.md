@@ -1,11 +1,3 @@
-<!-- ============================= -->
-
-<!--  THE ULTIMATE AI — README    -->
-
-<!--  Designed to push GitHub MD -->
-
-<!-- ============================= -->
-
 <p align="center">
   <img src="https://raw.githubusercontent.com/devicons/devicon/master/icons/python/python-original.svg" width="90" />
 </p>
@@ -21,20 +13,18 @@
   <img src="https://img.shields.io/badge/Security-Zero%20Trust-EF4444?style=for-the-badge" />
 </p>
 
-<p align="center">
-  <img src="https://capsule-render.vercel.app/api?type=rect&color=0:020617,100:0F172A&height=3" />
-</p>
-
 ---
 
+## 🧠 What Is **Optimind**?
 
-## 🧠 What Is Optimind?
+**Optimind** is a fully engineered **personal intelligence system** — not a chatbot.
 
-**Optimind** is a fully‑engineered **personal intelligence system**, not a chatbot.
+It is designed to:
 
-It is designed to run **locally**, reason **offline**, scale **online when needed**, and remain **under your control at all times**.
-
-This project exists to prove one idea:
+* 🖥️ Run **locally**
+* 🔌 Work **offline-first**
+* ☁️ Scale **online when needed**
+* 🔐 Stay **fully under your control**
 
 > **AI should be owned — not rented.**
 
@@ -47,32 +37,88 @@ flowchart LR
     Control --> Privacy --> Speed --> Intelligence --> Control
 ```
 
-* **Control** over execution
-* **Privacy** by default
-* **Speed** without compromise
+* **Control over execution**
+* **Privacy by default**
+* **Speed without compromise**
 * **Modular intelligence**
 
 ---
 
+## 🚀 Newly Added Features
 
+### 🔧 Plugin System
+
+* Dynamic plugin loading & management
+* Voice-activated plugin triggers
+* Interactive plugin manager (`p` key or voice)
+* Hot-reload without restart
+* Isolated execution per plugin
+
+### 🎙️ Adaptive Whisper STT
+
+* Smart model selection by audio length
+* RAM-aware loading (8GB+ optimized)
+* Real-time VAD & silence endpointing
+
+### 🧠 Smart Parser & Automation
+
+* Hybrid LLM routing (local + cloud)
+* Automation task detection
+* Automatic code execution
+* Context-aware responses
+
+### 🛡️ Enhanced Security Layers
+
+* Password guard with secure validation
+* Age verification system
+* Content filtering
+* Secure API session handling
+
+### 📁 File & Data Processing
+
+* CSV analysis & AI reports
+* Word clouds with custom masks
+* DOCX / PDF generation
+* QR code generation
+
+### 🎨 Media Creation Suite
+
+* AI image generation (Pollinations)
+* Audio generation (Melody)
+* Screen & live camera analysis
+* Object detection & recognition
+
+---
 
 ## 🧠 System Architecture
 
 ```mermaid
 flowchart TB
     User((Human)) --> Interface
-    Interface --> STT[Whisper · Local]
-    Interface --> Vision[OCR · Screen AI]
-    STT --> Brain
+    Interface --> STT[Whisper · Adaptive]
+    Interface --> Vision[Camera · Screen]
+    STT --> Brain[Smart Parser]
     Vision --> Brain
-    Brain -->|Offline| LocalLLMs
-    Brain -->|Ultra‑Fast| Groq[LLaMA 70B]
-    LocalLLMs --> Memory
+    Brain -->|Local| LocalLLMs[DeepSeek / Gemma]
+    Brain -->|Fast| Groq[LLaMA 70B]
+
+    subgraph PluginEcosystem
+        P1[Media]
+        P2[API]
+        P3[Utility]
+        P4[Custom]
+    end
+
+    LocalLLMs --> Memory[JSON Memory]
     Groq --> Memory
-    Memory --> Decision
-    Decision --> Output
-    Output --> TTS[Typecast Voice]
-    Output --> Media
+    Memory --> Decision[Task Router]
+
+    Decision --> Code[Auto-Coder]
+    Decision --> PluginEcosystem
+    Decision --> API[API Gateway]
+    Decision --> Response
+
+    Response --> TTS[Voice]
 ```
 
 ---
@@ -81,109 +127,133 @@ flowchart TB
 
 ### 🎙️ Voice Layer
 
-* Realistic **Typecast TTS**
-* **OpenAI Whisper STT** (fully local)
-* Neural Network **Clap Detection** trigger
-
----
+* Adaptive Whisper STT
+* Typecast TTS
+* Clap detection for hands-free activation
 
 ### 🧠 Language Models
 
-**Cloud (Speed & Reasoning)**
+**Cloud**
 
-* Groq Infrastructure
-* LLaMA 70B
+* Groq (LLaMA 70B)
 
-**Offline (Privacy & Control)**
+**Local**
 
 * DeepSeek 7B
 * Gemma 7B
-* Meta‑LLaMA 8B
+* LLaMA 8B
 * Qwen 7B
 
-> Model routing adapts automatically per task.
+Automatic routing based on task & connectivity.
 
 ---
 
+## 🔌 Plugin Architecture
 
+* Metadata-based plugins
+* Trigger-driven activation
+* Isolated execution
+* Hot reload
+* Plugin manager UI
 
-## 🔐 Zero‑Trust Security
+---
+
+## 🔐 Security Core
 
 ```mermaid
 sequenceDiagram
     User->>Gateway: Request
     Gateway->>Security: Validate
-    Security->>Database: SHA‑456 Encrypt
+    Security->>Database: Encrypt
     Database-->>Gateway: Verified
     Gateway-->>User: Access Granted
 ```
 
-* SQLite secure storage
-* SHA‑456 hashing
-* Age verification enforcement
-* Automatic illegal & adult‑content blocking
+* Password protection
+* Age verification
+* Content filtering
+* Local-first data storage
 
 ---
 
-## 👁️ Visual Intelligence
+## 🚀 Running the System
 
-* OCR Space integration
-* Screen awareness
-* Contextual summaries
-* Proactive risk detection
-
----
-
-## 🎨 Media Generation Engine
-
-* 🖼️ Images
-* 🎬 Video
-* 🎧 Audio
-* 📊 Word clouds
-* 📄 Reports
-* 🔳 QR codes
-
-All generated **locally or hybrid**.
-
----
-
-## 🧠 Memory Core
-
-* JSON‑based persistent memory
-* Context preservation
-* Local‑first storage
-
----
-
-
-## 🧩 API Superstructure
-
-* Cloud & infrastructure APIs
-* Communication APIs
-* AI processing APIs
-* Data & analytics APIs
-* Security & network APIs
-* System utilities
-
----
-
-## 🚀 Running The System
+### Prerequisites
 
 ```bash
+python --version  # Python 3.8+
+```
+
+### Installation
+
+```bash
+git clone https://github.com/yourusername/optimind.git
+cd optimind
 pip install -r requirements.txt
+```
+
+### Execution
+
+```bash
 python main.py
 ```
+
+---
+
+## 🏗️ Project Structure
+
+```text
+optimind/
+├── main.py
+├── auto_coder.py
+├── memory.py
+├── plugin.py
+├── api_integrations.py
+├── speak.py
+├── clap.py
+├── requirements.txt
+└── plugins/
+```
+
+---
+
+## 🔧 Plugin Development
+
+```python
+plugin_info = {
+    "name": "My Plugin",
+    "version": "1.0.0",
+    "author": "You",
+    "triggers": ["my command"]
+}
+
+def plugin_function(text, speak):
+    speak("Plugin executed")
+    return text
+```
+
+---
+
+## 🛠️ Troubleshooting
+
+* **Whisper not found** → Check model paths
+* **No audio input** → Verify mic permissions
+* **Slow performance** → Use smaller models
+
+---
+
+## 📄 License
+
+MIT License
+
 ---
 
 ## 🏴 Final Words
 
-> **This repository is not a demo.**
-> **It is a foundation.**
+This repository is **not a demo**.
 
----
+It is a **foundation for personal AI sovereignty** — intelligence you own, control, and evolve.
 
 <p align="center">
   <img src="https://capsule-render.vercel.app/api?type=waving&color=0:6366F1,100:8B5CF6&height=200&section=footer" />
 </p>
-
-<!-- END OF README -->
