@@ -99,26 +99,32 @@ flowchart TB
     Interface --> Vision[Camera · Screen]
     STT --> Brain[Smart Parser]
     Vision --> Brain
-    Brain -->|Local| LocalLLMs[DeepSeek / Gemma]
+    Brain -->|Local| LocalLLMs[DeepSeek/Gemma]
     Brain -->|Fast| Groq[LLaMA 70B]
-
-    subgraph PluginEcosystem
-        P1[Media]
-        P2[API]
-        P3[Utility]
-        P4[Custom]
+    
+    subgraph "Plugin Ecosystem"
+        P1[Media Plugins]
+        P2[API Plugins]
+        P3[Utility Plugins]
+        P4[Custom Plugins]
     end
-
+    
     LocalLLMs --> Memory[JSON Memory]
     Groq --> Memory
     Memory --> Decision[Task Router]
-
-    Decision --> Code[Auto-Coder]
-    Decision --> PluginEcosystem
-    Decision --> API[API Gateway]
-    Decision --> Response
-
-    Response --> TTS[Voice]
+    
+    Decision -->|Automation| Code[Auto‑Coder]
+    Decision -->|Plugin| PluginSystem
+    Decision -->|API| API[API Gateway]
+    Decision -->|Chat| Response
+    
+    Code --> Output[Execution]
+    PluginSystem --> Output
+    API --> Output
+    Response --> TTS[Typecast Voice]
+    Response --> Media[Media Engine]
+    
+    Output --> Media
 ```
 
 ---
