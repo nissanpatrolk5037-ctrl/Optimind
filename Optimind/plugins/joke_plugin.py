@@ -1,0 +1,37 @@
+"""
+Joke Plugin - Tells random jokes
+"""
+
+from typing import Callable
+
+
+PLUGIN_TRIGGERS = [
+    "tell me a joke",
+    "make me laugh",
+    "say something funny",
+    "joke please",
+    "got any jokes"
+]
+
+PLUGIN_METADATA = {
+    "name": "Joke Teller",
+    "version": "1.0.0",
+    "author": "Optimind AI",
+    "description": "Tells random jokes",
+    "category": "Entertainment"
+}
+
+def PLUGIN_FUNCTION(text: str, speak: Callable) -> str:
+    import random
+    
+    jokes = [
+        "Why don't scientists trust atoms? Because they make up everything!",
+        "Why did the scarecrow win an award? He was outstanding in his field!",
+        "What do you call a fish wearing a bowtie? Sofishticated!",
+        "Why don't eggs tell jokes? They'd crack each other up!",
+        "What do you call fake spaghetti? An impasta!",
+    ]
+    
+    joke = random.choice(jokes)
+    speak(joke)
+    return joke

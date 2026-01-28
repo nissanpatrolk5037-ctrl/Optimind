@@ -1,0 +1,89 @@
+# local_llm_executor.py
+from llama_cpp import Llama
+from functools import lru_cache
+from typing import Optional
+
+@lru_cache(maxsize=128)
+def local_llm_deepseek(prompt: str) -> str:
+    """DeepSeek Math model for mathematical and logical tasks"""
+    try:
+        llm_deepseek = Llama(
+            model_path="E://Optimind//Models//local-llms//deepseek-math-7b-rl.Q4_K_M.gguf",
+            n_ctx=512,
+            n_threads=4
+        )
+        output = llm_deepseek(prompt, max_tokens=250)
+        return output["choices"][0]["text"].strip()
+    except Exception as e:
+        print(f"DeepSeek LLM Error: {e}")
+        return ""
+
+@lru_cache(maxsize=128)
+def local_llm_gemma(prompt: str) -> str:
+    """Gemma model for general conversation"""
+    try:
+        llm_gemma = Llama(
+            model_path="E://Optimind//Models//local-llms//gemma-7b.Q4_K_M.gguf",
+            n_ctx=512,
+            n_threads=4
+        )
+        output = llm_gemma(prompt, max_tokens=250)
+        return output["choices"][0]["text"].strip()
+    except Exception as e:
+        print(f"Gemma LLM Error: {e}")
+        return ""
+
+@lru_cache(maxsize=128)
+def local_llm_qwen(prompt: str) -> str:
+    """Qwen model for coding and technical tasks"""
+    try:
+        llm_qwen = Llama(
+            model_path="E://Optimind//Models//local-llms//Qwen2.5-7B-Instruct-Q4_K_M.gguf",
+            n_ctx=512,
+            n_threads=4
+        )
+        output = llm_qwen(prompt, max_tokens=250)
+        return output["choices"][0]["text"].strip()
+    except Exception as e:
+        print(f"Qwen LLM Error: {e}")
+        return ""
+
+@lru_cache(maxsize=128)
+def local_llm_meta_llama(prompt: str) -> str:
+    """Meta Llama model for general instruction following"""
+    try:
+        llm_meta = Llama(
+            model_path="E://Optimind//Models//local-llms//Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf",
+            n_ctx=512,
+            n_threads=4
+        )
+        output = llm_meta(prompt, max_tokens=250)
+        return output["choices"][0]["text"].strip()
+    except Exception as e:
+        print(f"Meta Llama LLM Error: {e}")
+        return ""
+
+def get_best_local_llm_response(prompt: str, task_type: str = "general") -> str:
+    """Get response from appropriate local LLM based on task type"""
+    try:
+        if "math" in task_type.lower() or "calculate" in prompt.lower():
+            return local_llm_deepseek(prompt)
+        elif "code" in task_type.lower() or "program" in prompt.lower():
+            return local_llm_qwen(prompt)
+        elif "explain" in prompt.lower() or "how to" in prompt.lower():
+            return local_llm_meta_llama(prompt)
+        else:
+            # Default to gemma for general conversation
+            return local_llm_gemma(prompt)
+    except Exception as e:
+        print(f"Local LLM fallback error: {e}")
+        # Try all models in sequence as last resort
+        models = [local_llm_gemma, local_llm_meta_llama, local_llm_qwen, local_llm_deepseek]
+        for model_func in models:
+            try:
+                result = model_func(prompt)
+                if result and len(result) > 10:  # Ensure meaningful response
+                    return result
+            except:
+                continue
+        return "I'm unable to process your request offline at the moment."
