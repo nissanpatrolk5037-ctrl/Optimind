@@ -92,6 +92,8 @@ flowchart LR
 
 ## 🧠 System Architecture
 
+```mermaid
+
 flowchart TB
     %% ========== START & AUTHENTICATION ==========
     Start((Start)) --> Auth[Authentication Layer]
@@ -261,6 +263,8 @@ flowchart TB
     class CodeExec,MediaExec,APIExec,UtilExec,AIExec exec
     class Speaker,Display,Console,Status,Feedback,ChatDisplay output
     class Memory,Logging memory
+
+```
 
 ---
 
