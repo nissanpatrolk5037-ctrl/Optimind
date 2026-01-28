@@ -93,38 +93,60 @@ flowchart LR
 ## 🧠 System Architecture
 
 ```mermaid
-flowchart TB
-    User((Human)) --> Interface
-    Interface --> STT[Whisper · Adaptive]
-    Interface --> Vision[Camera · Screen]
-    STT --> Brain[Smart Parser]
-    Vision --> Brain
-    Brain -->|Local| LocalLLMs[DeepSeek/Gemma]
-    Brain -->|Fast| Groq[LLaMA 70B]
+graph TB
+    A[User Input] --> B{Input Type}
+    B --> C[Voice]
+    B --> D[Text]
+    B --> E[Image]
+    B --> F[Trigger]
     
-    subgraph "Plugin Ecosystem"
-        P1[Media Plugins]
-        P2[API Plugins]
-        P3[Utility Plugins]
-        P4[Custom Plugins]
+    C --> G[Whisper STT]
+    D --> H[Text Parser]
+    E --> I[Vision Processing]
+    F --> J[Trigger Detection]
+    
+    G --> K[Transcribed Text]
+    H --> K
+    I --> L[Computer Vision Results]
+    J --> M[API Integration]
+    
+    K --> N{Task Type}
+    N --> O[Conversation]
+    N --> P[Automation]
+    N --> Q[Plugin]
+    
+    O --> R[Groq/LLM]
+    P --> S[Code Generation]
+    Q --> T[Plugin Execution]
+    
+    R --> U[Response]
+    S --> V[Code Execution]
+    T --> W[Plugin Output]
+    
+    U --> X[Output]
+    V --> X
+    W --> X
+    
+    X --> Y[User]
+    
+    subgraph "Core Engine"
+        G
+        H
+        I
+        J
+        N
     end
     
-    LocalLLMs --> Memory[JSON Memory]
-    Groq --> Memory
-    Memory --> Decision[Task Router]
+    subgraph "Processing Modules"
+        R
+        S
+        T
+    end
     
-    Decision -->|Automation| Code[Auto‑Coder]
-    Decision -->|Plugin| PluginSystem
-    Decision -->|API| API[API Gateway]
-    Decision -->|Chat| Response
-    
-    Code --> Output[Execution]
-    PluginSystem --> Output
-    API --> Output
-    Response --> TTS[Typecast Voice]
-    Response --> Media[Media Engine]
-    
-    Output --> Media
+    subgraph "External Services"
+        M
+        L
+    end
 ```
 
 ---
