@@ -167,23 +167,6 @@ All generated **locally or hybrid**.
 
 ---
 
-## 🗂️ Project Structure
-
-```bash
-optimind/
-├── core/
-├── voice/
-├── vision/
-├── security/
-├── media/
-├── models/
-├── database/
-├── config/
-└── main.py
-```
-
----
-
 ## 🚀 Running The System
 
 ```bash
