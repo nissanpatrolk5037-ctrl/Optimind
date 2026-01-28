@@ -212,17 +212,6 @@ graph TD
     A3 --> B3
     A4 --> B4
     A5 --> B5
-    
-    style A1 fill:#e1f5e1
-    style A2 fill:#d4edda
-    style A3 fill:#c3e6cb
-    style A4 fill:#b7dfc5
-    style A5 fill:#a8d5ba
-    style B1 fill:#f8f9fa
-    style B2 fill:#f8f9fa
-    style B3 fill:#f8f9fa
-    style B4 fill:#f8f9fa
-    style B5 fill:#f8f9fa
 ```
 
 ---
