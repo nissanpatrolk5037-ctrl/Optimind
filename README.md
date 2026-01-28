@@ -93,177 +93,38 @@ flowchart LR
 ## 🧠 System Architecture
 
 ```mermaid
-
 flowchart TB
-    %% ========== START & AUTHENTICATION ==========
-    Start((Start)) --> Auth[Authentication Layer]
+    User((Human)) --> Interface
+    Interface --> STT[Whisper · Adaptive]
+    Interface --> Vision[Camera · Screen]
+    STT --> Brain[Smart Parser]
+    Vision --> Brain
+    Brain -->|Local| LocalLLMs[DeepSeek/Gemma]
+    Brain -->|Fast| Groq[LLaMA 70B]
     
-    subgraph Auth["🔒 Security & Authentication"]
-        direction TB
-        PW[Password Guard] --> Age[Age Verification]
-        Age --> Clap[Clap Detection]
+    subgraph "Plugin Ecosystem"
+        P1[Media Plugins]
+        P2[API Plugins]
+        P3[Utility Plugins]
+        P4[Custom Plugins]
     end
     
-    Auth --> Boot[System Boot]
+    LocalLLMs --> Memory[JSON Memory]
+    Groq --> Memory
+    Memory --> Decision[Task Router]
     
-    %% ========== CORE SENSOR INPUTS ==========
-    Boot --> Sensors
+    Decision -->|Automation| Code[Auto‑Coder]
+    Decision -->|Plugin| PluginSystem
+    Decision -->|API| API[API Gateway]
+    Decision -->|Chat| Response
     
-    subgraph Sensors["📡 Input Sensors"]
-        direction LR
-        Microphone[🎤 Voice Input] --> Whisper[Whisper STT]
-        Camera[📷 Live Camera] --> YOLO[YOLO Detection]
-        Screen[🖥️ Screen Capture] --> OCR[Screen Analysis]
-    end
+    Code --> Output[Execution]
+    PluginSystem --> Output
+    API --> Output
+    Response --> TTS[Typecast Voice]
+    Response --> Media[Media Engine]
     
-    Whisper -->|Adaptive Models<br/>Tiny→Large| STT_Output[Transcribed Text]
-    YOLO -->|Object Detection| Vision_Output
-    OCR -->|Text Extraction| Screen_Output
-    
-    STT_Output -->|Speech| InputHub[Input Processing Hub]
-    Vision_Output -->|Vision| InputHub
-    Screen_Output -->|Screen| InputHub
-    
-    %% ========== PLUGIN ECOSYSTEM ==========
-    InputHub --> PluginRouter[Plugin Router]
-    
-    subgraph Plugins["🔌 Plugin Ecosystem"]
-        direction TB
-        
-        subgraph MediaPlugins["🎨 Media Plugins"]
-            M1[Image Generation]
-            M2[QR Code Generator]
-            M3[Word Cloud]
-            M4[Audio Generation]
-            M5[Screen Analysis]
-        end
-        
-        subgraph APIPlugins["🌐 API Integrations"]
-            A1[AWS Control]
-            A2[Google Services]
-            A3[Discord/WhatsApp]
-            A4[Slack/Twitter]
-            A5[Azure/GitHub]
-        end
-        
-        subgraph UtilityPlugins["🛠️ Utility Plugins"]
-            U1[File Operations]
-            U2[Data Analysis]
-            U3[Web Scraping]
-            U4[System Control]
-            U5[Security Tools]
-        end
-        
-        subgraph AIPlugins["🤖 AI Services"]
-            AI1[OpenAI GPT]
-            AI2[Translation]
-            AI3[Wikipedia]
-            AI4[PDF/OCR]
-        end
-    end
-    
-    PluginRouter -->|Media Triggers| MediaPlugins
-    PluginRouter -->|API Triggers| APIPlugins
-    PluginRouter -->|Utility Triggers| UtilityPlugins
-    PluginRouter -->|AI Triggers| AIPlugins
-    
-    %% ========== CORE AI PROCESSING ==========
-    InputHub -->|No Plugin Match| SmartParser[Smart Parser]
-    
-    subgraph ParserLogic["🧠 Smart Parser Logic"]
-        direction TB
-        Decision{Is Task Automation?}
-        Decision -->|Yes| AutoCode[Auto-Coder Engine]
-        Decision -->|No| ChatMode[Chat Mode]
-    end
-    
-    SmartParser --> ParserLogic
-    
-    %% ========== LLM INTEGRATION ==========
-    ChatMode --> LLMRouter[LLM Router]
-    
-    subgraph LLMs["🧬 Multi-LLM Architecture"]
-        direction LR
-        
-        subgraph Online["⚡ Online (Fast)"]
-            Groq[Groq LLaMA 70B]
-            Groq -->|API| GroqCloud[Cloud API]
-        end
-        
-        subgraph Offline["💾 Offline (Local)"]
-            Local1[DeepSeek Local]
-            Local2[Gemma 2B]
-            Local3[Custom Models]
-        end
-    end
-    
-    LLMRouter -->|Internet Available| Online
-    LLMRouter -->|No Internet| Offline
-    
-    %% ========== EXECUTION & OUTPUT ==========
-    AutoCode -->|Python Code| CodeExec[Code Executor]
-    MediaPlugins --> MediaExec[Media Engine]
-    APIPlugins --> APIExec[API Gateway]
-    UtilityPlugins --> UtilExec[Utility Engine]
-    AIPlugins --> AIExec[AI Processor]
-    LLMs --> ResponseGen[Response Generator]
-    
-    %% ========== MEMORY & LOGGING ==========
-    ResponseGen --> Memory[JSON Memory System]
-    CodeExec --> Memory
-    MediaExec --> Memory
-    APIExec --> Memory
-    UtilExec --> Memory
-    AIExec --> Memory
-    
-    Memory --> Logging[📊 Conversation Log]
-    
-    %% ========== FINAL OUTPUTS ==========
-    ResponseGen --> TTS[Typecast TTS Engine]
-    MediaExec --> MediaOutput[Media Outputs]
-    CodeExec --> Terminal[Terminal Output]
-    APIExec --> Network[Network Responses]
-    UtilExec --> System[System Changes]
-    AIExec --> AIOutput[AI Responses]
-    
-    TTS -->|Voice| Speaker["🔊 Audio Output"]
-    MediaOutput -->|Images/Files| Display["🖼️ Visual Output"]
-    Terminal -->|Code Results| Console["💻 Console"]
-    Network -->|API Results| Status["📡 Network Status"]
-    System -->|Changes| Feedback["🔄 System Feedback"]
-    AIOutput -->|Text| ChatDisplay["💭 Chat Display"]
-    
-    %% ========== FEEDBACK LOOP ==========
-    Speaker --> UserFeedback[User Interaction]
-    Display --> UserFeedback
-    Console --> UserFeedback
-    Status --> UserFeedback
-    Feedback --> UserFeedback
-    ChatDisplay --> UserFeedback
-    
-    UserFeedback --> Sensors
-    
-    %% ========== STYLES ==========
-    classDef start fill:#2E8B57,stroke:#333,stroke-width:2px,color:#fff
-    classDef security fill:#B22222,stroke:#333,stroke-width:1px,color:#fff
-    classDef input fill:#4169E1,stroke:#333,stroke-width:1px,color:#fff
-    classDef plugin fill:#8A2BE2,stroke:#333,stroke-width:1px,color:#fff
-    classDef ai fill:#FF4500,stroke:#333,stroke-width:1px,color:#fff
-    classDef llm fill:#20B2AA,stroke:#333,stroke-width:1px,color:#fff
-    classDef exec fill:#32CD32,stroke:#333,stroke-width:1px,color:#000
-    classDef output fill:#FFD700,stroke:#333,stroke-width:1px,color:#000
-    classDef memory fill:#9370DB,stroke:#333,stroke-width:1px,color:#fff
-    
-    class Start start
-    class Auth,PW,Age,Clap security
-    class Sensors,Microphone,Camera,Screen,Whisper,YOLO,OCR input
-    class Plugins,MediaPlugins,APIPlugins,UtilityPlugins,AIPlugins plugin
-    class SmartParser,ParserLogic,Decision ai
-    class LLMs,Online,Offline,Groq,Local1,Local2,Local3 llm
-    class CodeExec,MediaExec,APIExec,UtilExec,AIExec exec
-    class Speaker,Display,Console,Status,Feedback,ChatDisplay output
-    class Memory,Logging memory
-
+    Output --> Media
 ```
 
 ---
